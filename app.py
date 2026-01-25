@@ -10,9 +10,43 @@ app.config[
 db = SQLAlchemy(app)
 from models import Transaction
 
-@app.route('/hello', methods=['GET'])
-def hello_world():
-    return "Hello World!"
+
+#get exchange rate
+@app.route('/exchangeRate', methods=['GET'])
+def get_exchange_rate():
+
+    # transactions retrieved as lists
+    usd_to_lbp_transactions = db.session.execute(
+        db.select(Transaction).where(Transaction.usd_to_lbp == True)
+    ).scalars().all()
+    lbp_to_usd_transactions = db.session.execute(
+        db.select(Transaction).where(Transaction.usd_to_lbp == False)
+    ).scalars().all()
+
+    # list of each transactions rates
+    usd_to_lbp_rates = [
+        (t.lbp_amount / t.usd_amount) for t in usd_to_lbp_transactions
+    ]
+    lbp_to_usd_rates = [
+        (t.usd_amount / t.lbp_amount) for t in lbp_to_usd_transactions
+    ]
+
+    # final rate of each direction
+    avg_usd_to_lbp_rate = (
+        sum(usd_to_lbp_rates) / len(usd_to_lbp_rates) 
+        if usd_to_lbp_rates else None
+        )
+    avg_lbp_to_usd_rate = (
+        sum(lbp_to_usd_rates) / len(lbp_to_usd_rates) 
+        if lbp_to_usd_rates else None
+        )
+
+    return jsonify({
+        "message":"Retrieved average exchange rates",
+        "usd_to_lbp":avg_usd_to_lbp_rate,
+        "lbp_to_usd":avg_lbp_to_usd_rate
+    }), 200
+
 
 #create transaction
 @app.route('/transaction', methods=['POST'])
