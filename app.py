@@ -1,18 +1,34 @@
 from flask import Flask, request, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from dotenv import load_dotenv
+import os
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+# Load environment variables from the .env file
+load_dotenv()
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 
 app = Flask(__name__)
 app.config[
     'SQLALCHEMY_DATABASE_URI'
-    ] = 'mysql+pymysql://root:natourroot@127.0.0.1:3306/exchange'
+    ] = f'mysql+pymysql://{DB_USER}:{DB_PASSWORD}@127.0.0.1:3306/exchange'
 
 db = SQLAlchemy(app)
+
+# limiter to protect from dos attacks
+limiter = Limiter(app=app, key_func=get_remote_address)
+
 from models import Transaction
 
 
-#get exchange rate
+#get exchange rate with rate limiting
 @app.route('/exchangeRate', methods=['GET'])
+@limiter.limit("10 per minute")
+
 def get_exchange_rate():
 
     # transactions retrieved as lists
@@ -23,6 +39,7 @@ def get_exchange_rate():
         db.select(Transaction).where(Transaction.usd_to_lbp == False)
     ).scalars().all()
 
+
     # list of each transactions rates
     usd_to_lbp_rates = [
         (t.lbp_amount / t.usd_amount) for t in usd_to_lbp_transactions
@@ -32,14 +49,17 @@ def get_exchange_rate():
     ]
 
     # final rate of each direction
-    avg_usd_to_lbp_rate = (
-        sum(usd_to_lbp_rates) / len(usd_to_lbp_rates) 
-        if usd_to_lbp_rates else None
-        )
+    avg_usd_to_lbp_rate =  (
+        sum(usd_to_lbp_rates) / len(usd_to_lbp_rates)
+        if len(usd_to_lbp_rates)>0
+        else None
+    )
+        
     avg_lbp_to_usd_rate = (
         sum(lbp_to_usd_rates) / len(lbp_to_usd_rates) 
-        if lbp_to_usd_rates else None
-        )
+        if len(lbp_to_usd_rates) > 0 
+        else None
+    )
 
     return jsonify({
         "message":"Retrieved average exchange rates",
@@ -48,17 +68,19 @@ def get_exchange_rate():
     }), 200
 
 
-#create transaction
+#create transaction with rate limiter
 @app.route('/transaction', methods=['POST'])
+@limiter.limit("10 per minute")
+
 def add_transaction():
     data = request.json
-    usd_amount = data.get("usd_amount")
-    lbp_amount = data.get("lbp_amount")
+    usd_amount = data.get("usd_amount", 0)
+    lbp_amount = data.get("lbp_amount", 0)
     usd_to_lbp = data.get("usd_to_lbp")
 
-    #if not an instance of boolean return bad req error
+    #if not an instance of boolean return error
     if not isinstance(usd_to_lbp, bool):
-        abort(400, "usd_to_lbp must be boolean")
+        return jsonify({"error":"Direction must be boolean"}), 400
 
     #validating currency types and returning error if invalid
     try:
@@ -66,14 +88,14 @@ def add_transaction():
         lbp_amount=float(lbp_amount)
 
     except (ValueError, TypeError):
-        abort(400, "Amounts must be numbers!")
+        return jsonify({"error":"Amounts must be numbers"}), 400
 
-    # here we know that they are correct types need to validate values
+    # correct types need to validate values
     if (
         usd_amount<=0 or
         lbp_amount<=0
         ):
-        abort(400, "currency values must be positive")
+        return jsonify({"error":"Invalid amount"}), 400
 
     #input has been validated, create transaction instance
     t = Transaction(
@@ -87,6 +109,13 @@ def add_transaction():
     return jsonify({
         "message": "Transaction created",
         "status":"201",
-        "transaction": t.to_dict()
+        "transaction": {
+            "usd_amount":t.usd_amount,
+            "lbp_amount":t.lbp_amount,
+            "usd_to_lbp":t.usd_to_lbp
+        }
      }), 201
 
+
+if __name__ == "__main__":
+    app.run(debug=False)
