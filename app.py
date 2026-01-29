@@ -4,6 +4,10 @@ from dotenv import load_dotenv
 import os
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from transaction import Transaction, TransactionSchema, db, ma
+from user import User, UserSchema
+from extentions import bcrypt
+
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -17,12 +21,14 @@ app.config[
     'SQLALCHEMY_DATABASE_URI'
     ] = f'mysql+pymysql://{DB_USER}:{DB_PASSWORD}@127.0.0.1:3306/exchange'
 
-db = SQLAlchemy(app)
 
-# limiter to protect from dos attacks
+db.init_app(app)
+ma.init_app(app)
+bcrypt.init_app(app)
+
 limiter = Limiter(app=app, key_func=get_remote_address)
-
-from models import Transaction
+transaction_schema=TransactionSchema()
+user_schema=UserSchema()
 
 
 #get exchange rate with rate limiting
@@ -74,6 +80,8 @@ def get_exchange_rate():
 
 def add_transaction():
     data = request.json
+    if not data:
+        return jsonify({"error": "Invalid JSON payload"}), 400
     usd_amount = data.get("usd_amount", 0)
     lbp_amount = data.get("lbp_amount", 0)
     usd_to_lbp = data.get("usd_to_lbp")
@@ -106,15 +114,61 @@ def add_transaction():
     # add to the session and commit the change to save to db
     db.session.add(t)
     db.session.commit()
-    return jsonify({
-        "message": "Transaction created",
-        "status":"201",
-        "transaction": {
-            "usd_amount":t.usd_amount,
-            "lbp_amount":t.lbp_amount,
-            "usd_to_lbp":t.usd_to_lbp
+    return jsonify(
+        {
+            "message":"Transaction created successfully",
+            "transaction": transaction_schema.dump(t),
+
         }
-     }), 201
+    ), 201
+
+
+@app.route('/user', methods=["POST"])
+@limiter.limit("10 per minute")
+
+def add_user():
+    data = request.json
+    if not data:
+        return jsonify({"error": "Invalid JSON payload"}), 400
+    user_name = data.get("user_name")
+    password = data.get("password")
+
+    # validate if user_name and password are strings
+    if  not (
+        isinstance(user_name, str) and 
+        isinstance(password, str)
+        ): 
+        return jsonify({"error":"Username and Password have to be strings"}), 400
+
+
+    if len(user_name)==0 or len(password)==0:
+        return jsonify({"error":"Username and Password can not be empty"}), 400
+
+    #check if username exists in db as db check not enough
+    existing = db.session.execute(
+        db.select(User).where(User.user_name==user_name)
+    ).scalar_one_or_none()
+
+    if existing:
+        return jsonify({"error":f'Username "{user_name}"already exists'}), 409
+
+    #create user instance,
+    u = User(
+        user_name,
+        password
+    )
+
+    #add to session and commit the change
+    db.session.add(u)  
+    db.session.commit()
+    
+    #return json containing 
+    return jsonify(
+        {
+            "message":"User created successfully",
+            "user": user_schema.dump(u),
+        }
+    ) , 201
 
 
 if __name__ == "__main__":
