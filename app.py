@@ -7,6 +7,9 @@ from flask_limiter.util import get_remote_address
 from transaction import Transaction, TransactionSchema, db, ma
 from user import User, UserSchema
 from extentions import bcrypt
+import jwt
+import jwtAuth
+
 
 
 # Load environment variables from the .env file
@@ -134,14 +137,14 @@ def add_user():
     password = data.get("password")
 
     # validate if user_name and password are strings
-    if  not (
+    if not (
         isinstance(user_name, str) and 
         isinstance(password, str)
         ): 
         return jsonify({"error":"Username and Password have to be strings"}), 400
 
-
-    if len(user_name)==0 or len(password)==0:
+    # verify that they are not empty
+    if not user_name or not password :
         return jsonify({"error":"Username and Password can not be empty"}), 400
 
     #check if username exists in db as db check not enough
@@ -150,7 +153,7 @@ def add_user():
     ).scalar_one_or_none()
 
     if existing:
-        return jsonify({"error":f'Username "{user_name}"already exists'}), 409
+        return jsonify({"error":f'Username ({user_name}) already exists'}), 409
 
     #create user instance,
     u = User(
@@ -169,6 +172,47 @@ def add_user():
             "user": user_schema.dump(u),
         }
     ) , 201
+
+
+@app.route("/authentication", methods=["POST"])
+@limiter.limit("10 per minute")
+def authenticate():
+    data = request.json
+    if not data:
+        return jsonify({"error": "Invalid JSON payload"}), 400
+    
+    user_name = data.get("user_name")
+    password = data.get("password")
+
+    # validate if user_name and password are strings
+    if not (
+        isinstance(user_name, str) and 
+        isinstance(password, str)
+        ): 
+        return jsonify({"error":"Username and Password have to be strings"}), 400
+
+    # verify that they are not empty
+    if not user_name or not password :
+        return jsonify({"error":"Username and Password can not be empty"}), 400
+
+    user = db.session.execute(
+        db.select(User).where(User.user_name==user_name)
+    ).scalar_one_or_none()
+    
+    #unauthorized is 401, 403 is forbidden
+    if not user:
+        return jsonify({"error":f'Username ({user_name}) does not exist'}), 401
+    
+    #users exists need to check password
+    correct_password=bcrypt.check_password_hash(user.hashed_password, password)
+    if not correct_password:
+        return jsonify({"error":'Password does not match'}), 401
+
+    #correct initials at this stage create token
+    token=jwtAuth.create_token(user.id)
+    return jsonify({
+        "token":token
+    }), 200
 
 
 if __name__ == "__main__":
