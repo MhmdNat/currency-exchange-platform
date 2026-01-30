@@ -9,6 +9,8 @@ from user import User, UserSchema
 from extentions import bcrypt
 import jwt
 import jwtAuth
+import datetime
+from jwt import ExpiredSignatureError, InvalidTokenError
 
 
 
@@ -31,6 +33,7 @@ bcrypt.init_app(app)
 
 limiter = Limiter(app=app, key_func=get_remote_address)
 transaction_schema=TransactionSchema()
+transactions_schema=TransactionSchema(many=True)
 user_schema=UserSchema()
 
 
@@ -77,17 +80,56 @@ def get_exchange_rate():
     }), 200
 
 
+#get transactions created by authenticated user
+@app.route("/transaction", methods=["GET"])
+@limiter.limit("10 per minute")
+def get_user_transactions():
+    try:
+        user_id = jwtAuth.get_auth_user(request)
+    except InvalidTokenError as e:
+        abort(401, e)
+    except  ExpiredSignatureError as e:
+        abort(401, e)
+    if not user_id:
+        abort(401, "error: Unauthorized user")
+    
+    #here the user is authenticated
+    transactions=db.session.execute(
+        db.select(Transaction).where(Transaction.user_id==user_id)
+    ).scalars().all()
+
+    return jsonify({
+        "message":"Retrieved user's transactions",
+        "transactions":transactions_schema.dump(transactions)
+    }), 200
+
+
+
+
 #create transaction with rate limiter
 @app.route('/transaction', methods=['POST'])
 @limiter.limit("10 per minute")
 
 def add_transaction():
     data = request.json
+
     if not data:
         return jsonify({"error": "Invalid JSON payload"}), 400
+    
     usd_amount = data.get("usd_amount", 0)
     lbp_amount = data.get("lbp_amount", 0)
     usd_to_lbp = data.get("usd_to_lbp")
+
+    #either user id if authenticated or none 
+    try:
+        user_id = jwtAuth.get_auth_user(request)
+    except InvalidTokenError as e:
+        user_id = None
+        print("error:", e)
+    except  ExpiredSignatureError as e:
+        user_id = None
+        print("error: ", e)
+
 
     #if not an instance of boolean return error
     if not isinstance(usd_to_lbp, bool):
@@ -112,7 +154,8 @@ def add_transaction():
     t = Transaction(
         usd_amount=usd_amount,
         lbp_amount=lbp_amount,
-        usd_to_lbp=usd_to_lbp
+        usd_to_lbp=usd_to_lbp,
+        user_id=user_id,
     )
     # add to the session and commit the change to save to db
     db.session.add(t)
@@ -198,7 +241,7 @@ def authenticate():
     user = db.session.execute(
         db.select(User).where(User.user_name==user_name)
     ).scalar_one_or_none()
-    
+
     #unauthorized is 401, 403 is forbidden
     if not user:
         return jsonify({"error":f'Username ({user_name}) does not exist'}), 401
