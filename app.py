@@ -1,30 +1,17 @@
 from flask import Flask, request, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from dotenv import load_dotenv
-import os
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from transaction import Transaction, TransactionSchema, db, ma
-from user import User, UserSchema
+from model.transaction import Transaction, TransactionSchema, db, ma
+from model.user import User, UserSchema
 from extentions import bcrypt
-import jwt
 import jwtAuth
-import datetime
+from datetime import datetime, timedelta, timezone
 from jwt import ExpiredSignatureError, InvalidTokenError
-
-
-
-# Load environment variables from the .env file
-load_dotenv()
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-SECRET_KEY = os.getenv("SECRET_KEY")
-
+from db_config import db_config
 
 app = Flask(__name__)
-app.config[
-    'SQLALCHEMY_DATABASE_URI'
-    ] = f'mysql+pymysql://{DB_USER}:{DB_PASSWORD}@127.0.0.1:3306/exchange'
+app.config['SQLALCHEMY_DATABASE_URI'] = db_config
 
 
 db.init_app(app)
@@ -43,13 +30,17 @@ user_schema=UserSchema()
 
 def get_exchange_rate():
 
+    threeDays = timedelta(days=3)
+    currentTime = datetime.now(timezone.utc)
+    threeDaysAgo = currentTime - threeDays
+
     # transactions retrieved as lists
-    usd_to_lbp_transactions = db.session.execute(
-        db.select(Transaction).where(Transaction.usd_to_lbp == True)
-    ).scalars().all()
-    lbp_to_usd_transactions = db.session.execute(
-        db.select(Transaction).where(Transaction.usd_to_lbp == False)
-    ).scalars().all()
+    usd_to_lbp_transactions = Transaction.query.filter(
+        Transaction.added_date.between(threeDaysAgo, currentTime),
+        Transaction.usd_to_lbp == True).all()
+    lbp_to_usd_transactions = Transaction.query.filter(
+        Transaction.added_date.between(threeDaysAgo, currentTime),
+        Transaction.usd_to_lbp == False).all()
 
 
     # list of each transactions rates

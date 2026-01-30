@@ -1,14 +1,14 @@
 import jwt
 
-import datetime
+from datetime import datetime, timezone, timedelta
 import os
 
 SECRET_KEY=os.getenv("SECRET_KEY")
 
 def create_token(user_id):
     payload = {
-    'exp': datetime.datetime.utcnow() + datetime.timedelta(days=4),
-    'iat': datetime.datetime.utcnow(),
+    'exp': datetime.now(timezone.utc) + timedelta(days=4),
+    'iat': datetime.now(timezone.utc),
     'sub': str(user_id) #sub must be string
     }
     

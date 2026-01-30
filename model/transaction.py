@@ -3,15 +3,15 @@ from extentions import db, ma
 from sqlalchemy import CheckConstraint
 from marshmallow import fields
 from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
-import datetime
-from user import User
+from datetime import datetime, timezone
+from model.user import User
 
 class Transaction(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     usd_amount: Mapped[float] = mapped_column(nullable=False)
     lbp_amount: Mapped[float] = mapped_column(nullable=False)
     usd_to_lbp: Mapped[bool] = mapped_column(nullable=False)
-    added_date: Mapped[datetime.datetime] = mapped_column(nullable=False)
+    added_date: Mapped[datetime] = mapped_column(nullable=False)
     user_id: Mapped[int] = mapped_column(db.ForeignKey("user.id"), nullable=True)
 
     def __init__(self, usd_amount, lbp_amount, usd_to_lbp, user_id):
@@ -20,7 +20,7 @@ class Transaction(db.Model):
             lbp_amount=lbp_amount, 
             usd_to_lbp=usd_to_lbp,
             user_id=user_id,
-            added_date=datetime.datetime.now()
+            added_date=datetime.now(timezone.utc)
         )
 
 
