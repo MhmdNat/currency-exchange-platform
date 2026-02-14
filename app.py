@@ -9,9 +9,11 @@ import jwtAuth
 from datetime import datetime, timedelta, timezone
 from jwt import ExpiredSignatureError, InvalidTokenError
 from db_config import db_config
+from flask_cors import CORS
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_config
+CORS(app)
 
 
 db.init_app(app)
@@ -48,7 +50,7 @@ def get_exchange_rate():
         (t.lbp_amount / t.usd_amount) for t in usd_to_lbp_transactions
     ]
     lbp_to_usd_rates = [
-        (t.usd_amount / t.lbp_amount) for t in lbp_to_usd_transactions
+        (t.lbp_amount / t.usd_amount) for t in lbp_to_usd_transactions
     ]
 
     # final rate of each direction
