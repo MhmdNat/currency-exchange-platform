@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from jwt import ExpiredSignatureError, InvalidTokenError
 from db_config import db_config
 from flask_cors import CORS
+import utils
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_config
@@ -31,45 +32,86 @@ user_schema=UserSchema()
 @limiter.limit("10 per minute")
 
 def get_exchange_rate():
-
     threeDays = timedelta(days=3)
     currentTime = datetime.now(timezone.utc)
     threeDaysAgo = currentTime - threeDays
 
-    # transactions retrieved as lists
-    usd_to_lbp_transactions = Transaction.query.filter(
-        Transaction.added_date.between(threeDaysAgo, currentTime),
-        Transaction.usd_to_lbp == True).all()
-    lbp_to_usd_transactions = Transaction.query.filter(
-        Transaction.added_date.between(threeDaysAgo, currentTime),
-        Transaction.usd_to_lbp == False).all()
+    #get transactions by time
+    usd_to_lbp_transactions, lbp_to_usd_transactions = utils.get_transactions_by_date(
+        threeDaysAgo, 
+        currentTime
+    )
 
-
-    # list of each transactions rates
-    usd_to_lbp_rates = [
-        (t.lbp_amount / t.usd_amount) for t in usd_to_lbp_transactions
-    ]
-    lbp_to_usd_rates = [
-        (t.lbp_amount / t.usd_amount) for t in lbp_to_usd_transactions
-    ]
+    # get rates of transactions
+    usd_to_lbp_rates_weighted, lbp_to_usd_rates_weighted = utils.get_transaction_rates_weighted(
+        usd_to_lbp_transactions,
+        lbp_to_usd_transactions
+    )
 
     # final rate of each direction
-    avg_usd_to_lbp_rate =  (
-        sum(usd_to_lbp_rates) / len(usd_to_lbp_rates)
-        if len(usd_to_lbp_rates)>0
-        else None
-    )
-        
-    avg_lbp_to_usd_rate = (
-        sum(lbp_to_usd_rates) / len(lbp_to_usd_rates) 
-        if len(lbp_to_usd_rates) > 0 
-        else None
-    )
+    avg_weighted_usd_to_lbp_rate = utils.get_weighted_avg_rate(usd_to_lbp_rates_weighted)
+    avg_weighted_lbp_to_usd_rate = utils.get_weighted_avg_rate(lbp_to_usd_rates_weighted)
 
     return jsonify({
         "message":"Retrieved average exchange rates",
-        "usd_to_lbp":avg_usd_to_lbp_rate,
-        "lbp_to_usd":avg_lbp_to_usd_rate
+        "usd_to_lbp":avg_weighted_usd_to_lbp_rate,
+        "lbp_to_usd":avg_weighted_lbp_to_usd_rate
+    }), 200
+
+
+# get exchange rate with analytics
+@app.route("/exchangeRate/analytics", methods=["GET"])
+@limiter.limit("10 per minute")
+
+def get_exchange_rate_analytics():
+    start_str = request.args.get("start") #this would be "2026-02-16"
+    end_str = request.args.get("end")
+
+    #default if parameters not provided correctly
+    current_time = datetime.now(timezone.utc)
+    three_days_ago = current_time - timedelta(days=3)
+
+    try:
+        start_time = datetime.fromisoformat(start_str) if start_str else three_days_ago
+        end_time = datetime.fromisoformat(end_str) if end_str else current_time
+    except ValueError:
+        return jsonify({
+            "error": "Invalid date format. Use YYYY-MM-DD"
+        }), 400
+    
+    # get transactions
+    usd_to_lbp_transactions, lbp_to_usd_transactions = utils.get_transactions_by_date(
+        start_time, end_time
+    )
+
+    #get weighted rates
+    usd_to_lbp_rates_weighted, lbp_to_usd_rates_weighted = utils.get_transaction_rates_weighted(
+        usd_to_lbp_transactions, lbp_to_usd_transactions
+    )
+
+    # compute stats for USD to LBP
+    usd_rates = [r for r, w in usd_to_lbp_rates_weighted]  # plain rates
+    usd_stats = {
+        "min": min(usd_rates) if usd_rates else None,
+        "max": max(usd_rates) if usd_rates else None,
+        "weighted_avg": utils.get_weighted_avg_rate(usd_to_lbp_rates_weighted),
+        #pct change from first rate to last rate
+        "pct_change": ((usd_rates[-1] - usd_rates[0]) / usd_rates[0] * 100) if len(usd_rates) > 1 else 0
+    }
+
+    # compute stats for LBP to USD
+    lbp_rates = [r for r, w in lbp_to_usd_rates_weighted] #plain rates
+    lbp_stats = {
+        "min": min(lbp_rates) if lbp_rates else None,
+        "max": max(lbp_rates) if lbp_rates else None,
+        "weighted_avg": utils.get_weighted_avg_rate(lbp_to_usd_rates_weighted),
+        "pct_change": ((lbp_rates[-1] - lbp_rates[0]) / lbp_rates[0] * 100) if len(lbp_rates) > 1 else 0
+    }
+
+    return jsonify({
+        "message": "Exchange rate analytics retrieved",
+        "usd_to_lbp": usd_stats,
+        "lbp_to_usd": lbp_stats
     }), 200
 
 
