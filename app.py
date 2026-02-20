@@ -11,6 +11,7 @@ from jwt import ExpiredSignatureError, InvalidTokenError
 from db_config import db_config
 from flask_cors import CORS
 import utils
+from model.offer import Offer, OfferSchema
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_config
@@ -25,6 +26,7 @@ limiter = Limiter(app=app, key_func=get_remote_address)
 transaction_schema=TransactionSchema()
 transactions_schema=TransactionSchema(many=True)
 user_schema=UserSchema()
+offer_schema=OfferSchema()
 
 
 #get exchange rate with rate limiting
@@ -67,16 +69,12 @@ def get_exchange_rate_analytics():
     start_str = request.args.get("start") #this would be "2026-02-16"
     end_str = request.args.get("end")
 
-    #default if parameters not provided correctly
-    current_time = datetime.now(timezone.utc)
-    three_days_ago = current_time - timedelta(days=3)
-
+    #converts to datetime objects, defaults to three days ago and current time
     try:
-        start_time = datetime.fromisoformat(start_str) if start_str else three_days_ago
-        end_time = datetime.fromisoformat(end_str) if end_str else current_time
+        start_time, end_time = utils.convert_str_to_time(start_str, end_str)
     except ValueError:
         return jsonify({
-            "error": "Invalid date format. Use YYYY-MM-DD"
+        "error": "Invalid date format. Use YYYY-MM-DD"
         }), 400
     
     # get transactions
@@ -115,7 +113,52 @@ def get_exchange_rate_analytics():
     }), 200
 
 
+# FEATURE 2
+#Exchange Rate History Graph Support (Time-Series Data)
+
+@app.route("/exchangeRate/history", methods=["GET"])
+@limiter.limit("10 per minute")
 #get transactions created by authenticated user
+def get_exchange_rate_history():
+
+    #returns lists of rates per interval
+    start_str = request.args.get("start")
+    end_str = request.args.get("end")
+    interval = request.args.get("interval", "daily") #default is daily
+
+    #converts to datetime objects, defaults to three days ago and current time
+    try:
+        start_time, end_time = utils.convert_str_to_time(start_str, end_str)
+    except ValueError:
+        return jsonify({
+        "error": "Invalid date format. Use YYYY-MM-DD"
+        }), 400
+    
+    usd_txns, lbp_txns = utils.get_transactions_by_date(start_time, end_time)
+
+    # group transactions by interval
+    if interval == "hourly":
+        func = lambda t: t.added_date.replace(minute=0, second=0, microsecond=0) # keep day but round hour down
+        
+    else:  # daily
+        func = lambda t: t.added_date.date()
+
+    usd_timestamps, usd_rates = utils.extract_timestamps_and_rates(usd_txns, func)
+    lbp_timestamps, lbp_rates = utils.extract_timestamps_and_rates(lbp_txns, func)
+
+    return jsonify({
+        "usd_to_lbp": {
+            "timestamps": usd_timestamps, 
+            "rates": usd_rates
+            },
+        "lbp_to_usd": {
+            "timestamps": lbp_timestamps, 
+            "rates": lbp_rates
+            },
+    }), 200
+
+
+
 @app.route("/transaction", methods=["GET"])
 @limiter.limit("10 per minute")
 def get_user_transactions():
@@ -160,10 +203,8 @@ def add_transaction():
         user_id = jwtAuth.get_auth_user(request)
     except InvalidTokenError as e:
         user_id = None
-        print("error:", e)
     except  ExpiredSignatureError as e:
         user_id = None
-        print("error: ", e)
 
 
     #if not an instance of boolean return error
@@ -291,6 +332,87 @@ def authenticate():
     return jsonify({
         "token":token
     }), 200
+
+
+###########################
+#OFFERS AND TRADES SECTION
+
+#create offers endpoint
+
+@app.route("/offers", methods=["POST"])
+@limiter.limit("10 per minute")
+def create_offer():
+    data = request.json
+    if not data:
+        abort(400, "INVALID JSON PAYLOAD")
+
+    try:
+        user_id = jwtAuth.get_auth_user(request)
+    except InvalidTokenError as e:
+        abort(401, "Invalid token")
+    except  ExpiredSignatureError as e:
+        abort(401, "Expired token")
+
+    if not user_id:
+        abort(401, "Unauthorized user")
+    # Required fields
+    required_fields = ["from_currency", "to_currency", "amount", "exchange_rate"]
+
+    for field in required_fields:
+        if field not in data:
+            abort(400, f"MISSING FIELD: {field}")
+
+    from_currency = data.get("from_currency").upper()
+    to_currency = data.get("to_currency").upper()
+    amount = data.get("amount")
+    exchange_rate = data.get("exchange_rate")
+
+    # Validate currencies
+    allowed_currencies = ["USD", "LBP"]
+
+    if from_currency not in allowed_currencies:
+        abort(400, "INVALID from_currency")
+
+    if to_currency not in allowed_currencies:
+        abort(400, "INVALID to_currency")
+
+    if from_currency == to_currency:
+        abort(400, "CANNOT EXCHANGE SAME CURRENCY")
+
+    # Validate values
+    try:
+        amount = float(amount)
+        exchange_rate = float(exchange_rate)
+    except (ValueError, TypeError):
+        abort(400, "AMOUNT AND EXCHANGE_RATE MUST BE NUMBERS")
+
+    if amount <= 0:
+        abort(400, "AMOUNT MUST BE GREATER THAN 0")
+
+    if exchange_rate <= 0:
+        abort(400, "EXCHANGE_RATE MUST BE GREATER THAN 0")
+
+    # Create Offer
+    offer = Offer(
+        user_id=user_id,
+        from_currency=from_currency,
+        to_currency=to_currency,
+        amount_total=amount,
+        exchange_rate=exchange_rate,
+    )
+
+    db.session.add(offer)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Offer created successfully",
+        "offer": offer_schema.dump(offer)
+    }), 201
+
+    
+
+
+
 
 
 if __name__ == "__main__":
