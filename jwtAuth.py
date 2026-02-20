@@ -1,5 +1,5 @@
 import jwt
-
+from jwt import ExpiredSignatureError, InvalidTokenError
 from datetime import datetime, timezone, timedelta
 import os
 
@@ -49,3 +49,23 @@ def get_auth_user(authenticated_request):
     
     return decode_token(token) if token else None
 
+
+from functools import wraps
+from flask import request, abort, g
+
+def jwt_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        try:
+            user_id = get_auth_user(request)
+        except InvalidTokenError:
+            abort(401, "Invalid token")
+        except ExpiredSignatureError:
+            abort(401, "Expired token")
+
+        if not user_id:
+            abort(401, "Unauthorized user")
+
+        g.current_user_id = user_id
+        return f(*args, **kwargs)
+    return decorated

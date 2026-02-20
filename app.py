@@ -1,4 +1,4 @@
-from flask import Flask, request, abort, jsonify
+from flask import Flask, request, abort, jsonify, g
 from flask_sqlalchemy import SQLAlchemy
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -6,6 +6,7 @@ from model.transaction import Transaction, TransactionSchema, db, ma
 from model.user import User, UserSchema
 from extentions import bcrypt
 import jwtAuth
+from jwtAuth import jwt_required
 from datetime import datetime, timedelta, timezone
 from jwt import ExpiredSignatureError, InvalidTokenError
 from db_config import db_config
@@ -341,20 +342,14 @@ def authenticate():
 
 @app.route("/offers", methods=["POST"])
 @limiter.limit("10 per minute")
+@jwt_required
 def create_offer():
     data = request.json
     if not data:
         abort(400, "INVALID JSON PAYLOAD")
 
-    try:
-        user_id = jwtAuth.get_auth_user(request)
-    except InvalidTokenError as e:
-        abort(401, "Invalid token")
-    except  ExpiredSignatureError as e:
-        abort(401, "Expired token")
+    user_id=g.current_user_id
 
-    if not user_id:
-        abort(401, "Unauthorized user")
     # Required fields
     required_fields = ["from_currency", "to_currency", "amount", "exchange_rate"]
 
@@ -410,6 +405,45 @@ def create_offer():
     }), 201
 
     
+@app.route("/offers", methods=["GET"])
+@limiter.limit("10 per minute")
+@jwt_required
+def get_offers():
+
+    user_id = g.current_user_id
+    direction = request.args.get("direction")
+
+    if not direction:
+        abort(400, "MISSING direction PARAMETER")
+
+    direction = direction.lower()
+
+    if direction not in ["buy", "sell"]:
+        abort(400, "direction MUST BE 'buy' OR 'sell'")
+
+    query = Offer.query.filter(
+        Offer.status.in_(["OPEN", "PARTIAL"]),
+        Offer.amount_remaining > 0
+    )
+
+    # User wants to BUY USD
+    if direction == "buy":
+        query = query.filter(
+            Offer.from_currency == "USD",
+            Offer.to_currency == "LBP"
+        ).order_by(Offer.exchange_rate.asc())
+
+    # User wants to SELL USD
+    elif direction == "sell":
+        query = query.filter(
+            Offer.from_currency == "LBP",
+            Offer.to_currency == "USD"
+        ).order_by(Offer.exchange_rate.desc())
+
+    offers = query.limit(20).all()
+
+    schema = OfferSchema(many=True)
+    return jsonify(schema.dump(offers)), 200
 
 
 
