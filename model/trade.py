@@ -1,5 +1,6 @@
-from extensions import db
+from extensions import db, ma
 from datetime import datetime, timezone
+from marshmallow import fields
 
 class Trade(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -42,4 +43,21 @@ class Trade(db.Model):
             executed_rate=executed_rate,
             direction=direction,
             created_at=datetime.now(timezone.utc)
+        )
+
+
+class TradeSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Trade
+        include_fk = True
+        fields = (
+            "id",
+            "offer_id",
+            "maker_id",
+            "taker_id",
+            "amount_from",
+            "amount_to",
+            "executed_rate",
+            "direction",
+            "created_at"
         )

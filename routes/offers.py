@@ -1,8 +1,11 @@
+from datetime import datetime, timezone
+
 from flask import Blueprint, request, jsonify, abort, g
+from werkzeug.exceptions import HTTPException
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from model.offer import Offer, OfferSchema
-from model.trade import Trade
+from model.trade import Trade, TradeSchema
 from model.transaction import Transaction
 from model.userBalance import UserBalance
 from jwtAuth import jwt_required
@@ -12,6 +15,7 @@ offers_bp = Blueprint('offers', __name__)
 limiter = Limiter(key_func=get_remote_address)
 
 offer_schema = OfferSchema()
+trade_schema = TradeSchema(many=True)
 
 #create offers endpoint
 @offers_bp.route("/offers", methods=["POST"])
@@ -61,22 +65,43 @@ def create_offer():
     if exchange_rate <= 0:
         abort(400, "EXCHANGE_RATE MUST BE GREATER THAN 0")
 
-    # Create Offer
-    offer = Offer(
-        user_id=user_id,
-        from_currency=from_currency,
-        to_currency=to_currency,
-        amount_total=amount,
-        exchange_rate=exchange_rate,
-    )
+    # Subtract maker funds immediately
+    try:
+        maker_balance = db.session.query(UserBalance).filter_by(user_id=user_id).with_for_update().first()
+        if not maker_balance:
+            abort(400, "Maker balance not found")
 
-    db.session.add(offer)
-    db.session.commit()
+        if from_currency == "USD":
+            if maker_balance.usd_amount < amount:
+                abort(400, "Insufficient USD balance to create offer")
+            maker_balance.usd_amount -= amount
+        else:
+            if maker_balance.lbp_amount < amount:
+                abort(400, "Insufficient LBP balance to create offer")
+            maker_balance.lbp_amount -= amount
 
-    return jsonify({
-        "message": "Offer created successfully",
-        "offer": offer_schema.dump(offer)
-    }), 201
+        # Create Offer
+        offer = Offer(
+            user_id=user_id,
+            from_currency=from_currency,
+            to_currency=to_currency,
+            amount_total=amount,
+            exchange_rate=exchange_rate,
+        )
+
+        db.session.add(offer)
+        db.session.commit()
+
+        return jsonify({
+            "message": "Offer created successfully",
+            "offer": offer_schema.dump(offer)
+        }), 201
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.session.rollback()
+        print(f"error occured {str(e)}")
+        abort(500, "Could not create offer")
 
     
 @offers_bp.route("/offers", methods=["GET"])
@@ -207,18 +232,21 @@ def accept_offer(offer_id):
         )
         db.session.add(transaction)
 
-        # Update balances
-        if usd_to_lbp:
+        # Update balances: maker's sell currency was subtracted at offer creation,
+        #so here we only credit the maker with the amount to and update the taker balance.
+        if offer.from_currency == "USD":
+            # Maker sold USD at creation; on accept, maker receives LBP, taker gives LBP and receives USD
+            taker_balance.lbp_amount -= lbp_amount
+            taker_balance.usd_amount += usd_amount
+            maker_balance.lbp_amount += lbp_amount
+        else:
+            # Maker sold LBP at creation; on accept, maker receives USD, taker gives USD and receives LBP
             taker_balance.usd_amount -= usd_amount
             taker_balance.lbp_amount += lbp_amount
             maker_balance.usd_amount += usd_amount
-            maker_balance.lbp_amount -= lbp_amount
-        else:
-            taker_balance.usd_amount += usd_amount
-            taker_balance.lbp_amount -= lbp_amount
-            maker_balance.usd_amount -= usd_amount
-            maker_balance.lbp_amount += lbp_amount
 
+        maker_balance.updated_at = datetime.now(timezone.utc)
+        taker_balance.updated_at = datetime.now(timezone.utc)
         # Update offer remaining amount
         offer.amount_remaining -= requested_amount
         if offer.amount_remaining == 0:
@@ -235,7 +263,69 @@ def accept_offer(offer_id):
             "amount_remaining": offer.amount_remaining
         }), 201
 
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions (like abort(400)) to preserve status codes
     except Exception as e:
         db.session.rollback()
         print(f"error occured {str(e)}")
         abort(500, "Trade offer could not be accepted")
+
+
+@offers_bp.route("/offers/<int:offer_id>/cancel", methods=["POST"])
+@jwt_required
+def cancel_offer(offer_id):
+    user_id = g.current_user_id
+
+    try:
+        offer = db.session.query(Offer).filter_by(id=offer_id).with_for_update().first()
+        if not offer:
+            abort(404, "Offer not found")
+
+        if offer.user_id != user_id:
+            abort(403, "Only the offer owner can cancel the offer") #forbidden acttion
+
+        if offer.status not in ["OPEN", "PARTIAL"]:
+            abort(400, f"Offer cannot be cancelled (status={offer.status})")
+
+        # Refund remaining amount_remaining to maker in the offer.from_currency
+        refund_amount = offer.amount_remaining
+        if refund_amount > 0:
+            maker_balance = db.session.query(UserBalance).filter_by(user_id=offer.user_id).with_for_update().first()
+            if not maker_balance:
+                abort(400, "Maker balance not found for refund")
+            if offer.from_currency == "USD":
+                maker_balance.usd_amount += refund_amount
+            else:
+                maker_balance.lbp_amount += refund_amount
+
+        # mark as cancelled and zero remaining amount
+        offer.status = "CANCELLED"
+        offer.amount_remaining = 0
+        db.session.commit()
+
+        return jsonify({"message": "Offer cancelled successfully", "offer_id": offer.id}), 200
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.session.rollback()
+        print(f"error occured {str(e)}")
+        abort(500, "Offer could not be cancelled")
+
+
+@offers_bp.route("/trades", methods=["GET"])
+@jwt_required
+def get_my_trades():
+    user_id = g.current_user_id
+
+    try:
+        # include trades where user was maker or taker
+        trades = db.session.query(Trade).filter(
+            (Trade.maker_id == user_id) | (Trade.taker_id == user_id)
+        ).order_by(Trade.created_at.desc()).limit(100).all()
+
+        return jsonify({"trades": trade_schema.dump(trades)}), 200
+
+    except Exception as e:
+        print(f"error occured {str(e)}")
+        abort(500, "Could not retrieve trades")

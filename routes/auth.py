@@ -47,6 +47,7 @@ def add_user():
 
     #add to session and commit the change
     db.session.add(u)
+    db.session.flush()  # Flush to assign user.id
 
     # Create initial balance for the user
     balance = UserBalance(user_id=u.id, usd_amount=0.0, lbp_amount=0.0)
