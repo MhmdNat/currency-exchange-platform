@@ -1,5 +1,5 @@
-from extentions import db
-from datetime import datetime
+from extensions import db
+from datetime import datetime, timezone
 
 class Trade(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -16,4 +16,30 @@ class Trade(db.Model):
 
     executed_rate = db.Column(db.Float, nullable=False)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+    direction = db.Column(db.String(10), nullable=False)
+    # values could be:
+    # buy: taker is buying USD
+    # sell: taker is selling USD
+
+
+    def __init__(
+        self,
+        offer_id,
+        maker_id,
+        taker_id,
+        amount_from,
+        amount_to,
+        executed_rate,
+        direction
+    ):
+        super(Trade, self).__init__(
+            offer_id=offer_id,
+            maker_id=maker_id,
+            taker_id=taker_id,
+            amount_from=amount_from,
+            amount_to=amount_to,
+            executed_rate=executed_rate,
+            direction=direction,
+            created_at=datetime.now(timezone.utc)
+        )

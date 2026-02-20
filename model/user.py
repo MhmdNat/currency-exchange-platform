@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column
-from extentions import db, ma, bcrypt
+from extensions import db, ma, bcrypt
 
 class User(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)

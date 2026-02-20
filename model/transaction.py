@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column
-from extentions import db, ma
+from extensions import db, ma
 from sqlalchemy import CheckConstraint
 from marshmallow import fields
 from marshmallow_sqlalchemy import SQLAlchemyAutoSchema

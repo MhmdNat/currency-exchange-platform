@@ -1,4 +1,4 @@
-from extentions import db, ma
+from extensions import db, ma
 from datetime import datetime, timezone
 from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
 from marshmallow import fields
