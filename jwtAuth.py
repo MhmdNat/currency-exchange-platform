@@ -80,8 +80,9 @@ def jwt_required(f):
         return f(*args, **kwargs)
     return decorated
 
-@jwt_required
+
 def admin_required(f):
+    @jwt_required
     @wraps(f)
     def decorated(*args, **kwargs):
         user_id = g.current_user_id

@@ -3,7 +3,8 @@ from jwtAuth import admin_required
 from model.user import User, UserSchema
 from model.transaction import Transaction
 from model.userPreferences import UserPreferences, UserPreferencesSchema
-from model.rateAlerts import RateAlert, RateAlertSchema, RateAlerts
+from model.rateAlerts import RateAlert, RateAlertSchema
+from model.watchlist import WatchlistItem
 from extensions import db
 from flask import Blueprint
 from utils import validate_rate_alert_fields
@@ -70,21 +71,26 @@ def manage_user_preferences(user_id):
         return jsonify({
             'message': 'Preferences created',
             'preferences': preferences_schema.dump(prefs)
-                        })
+                        }), 200
     
     elif request.method == 'DELETE':
         prefs = user.preferences
         if not prefs:
             return jsonify({'error': 'Preferences not found'}), 404
-        db.session.add(user.preferences)
-        user.preferences = UserPreferences(user_id=user_id) #reset preferences to default values by creating new instance
+        db.session.add(prefs)
+        prefs.user_id = user_id 
+        prefs.default_time_range = '3d' #reset to default values
+        prefs.graph_interval = 'daily' #reset to default values
         db.session.commit()
         return "", 204
     
 
-@admin_bp.route('/admin/user/<int:user_id>/alerts/<int:alert_id>', methods=['POST'])  
+@admin_bp.route('/admin/user/<int:user_id>/alerts/', methods=['POST'])  
 @admin_required
-def create_user_alert(user_id, alert_id):
+def create_user_alert(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        abort(404, f"User with id {user_id} not found")
     data = request.json
     if not data:
         abort(400, "INVALID JSON PAYLOAD")
@@ -116,12 +122,10 @@ def create_user_alert(user_id, alert_id):
 
     return rateAlert_schema.jsonify(new_alert), 201
 
-@admin_bp.route('/admin/user/<int:user_id>/alerts', methods=['PUT'])    
+@admin_bp.route('/admin/user/<int:user_id>/alerts/<int:alert_id>', methods=['PUT'])    
 @admin_required
-def update_user_alert(user_id):
+def update_user_alert(user_id, alert_id):
     data = request.json
-    alert_id = data.get("alert_id")
-    
     if not data:
         abort(400, "INVALID JSON PAYLOAD")
     alert = RateAlert.query.filter_by(id=alert_id).first()
@@ -149,6 +153,9 @@ def update_user_alert(user_id):
 @admin_bp.route('/admin/user/<int:user_id>/alerts/<int:alert_id>', methods=['DELETE'])
 @admin_required
 def delete_user_alerts(user_id, alert_id):
+    user = User.query.get(user_id)
+    if not user:
+        abort(404, f"User with id {user_id} not found")
     alert = RateAlert.query.filter_by(id=alert_id).first()
 
     if not alert:
@@ -156,6 +163,14 @@ def delete_user_alerts(user_id, alert_id):
 
     if alert.user_id != user_id:
         abort(403, f"User {user_id} does not own this alert {alert_id} and cannot delete it")
+
+    # Delete all watchlist items linked to this alert
+    
+    watchlist_items = WatchlistItem.query.filter_by(rate_alert_id=alert_id).all()
+    for item in watchlist_items:
+        db.session.delete(item)
+    db.session.commit()  # Commit after deleting watchlist items
+
     db.session.delete(alert)
     db.session.commit()
     return '', 204

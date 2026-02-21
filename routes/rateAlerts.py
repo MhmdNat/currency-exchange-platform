@@ -1,7 +1,9 @@
 from flask import Blueprint, request, jsonify, abort, g
 from model.rateAlerts import RateAlert, RateAlertSchema
+from model.watchlist import WatchlistItem
 from jwtAuth import jwt_required
 from extensions import db
+from utils import validate_rate_alert_fields
 
 rateAlerts_bp = Blueprint('rateAlerts', __name__)
 
@@ -28,19 +30,8 @@ def create_rate_alert():
     direction = data.get("direction").upper()
     threshold_rate = data.get("threshold_rate")
     condition = data.get("condition").lower()
-
-    # Validate direction
-    allowed_directions = ["BUY_USD", "SELL_USD"]
-    if direction not in allowed_directions:
-        abort(400, "INVALID direction. Must be BUY_USD or SELL_USD")
-
-    # Validate condition
-    if condition not in ["above", "below"]:
-        abort(400, "INVALID condition. Must be 'above' or 'below'")
-
-    # Validate threshold_rate
-    if not isinstance(threshold_rate, (int, float)) or threshold_rate <= 0:
-        abort(400, "INVALID threshold_rate. Must be a positive number")
+    # validates the fields and raises an HTTPException with a 400 status code and error message if any field is invalid
+    validate_rate_alert_fields(direction, condition, threshold_rate)
 
     # Create the alert
     new_alert = RateAlert(
@@ -75,6 +66,12 @@ def delete_rate_alert(alert_id):
 
     if alert.user_id != user_id:
         abort(403, "You can only delete your own alerts")
+
+    # Delete all watchlist items linked to this alert
+    watchlist_items = WatchlistItem.query.filter_by(rate_alert_id=alert_id).all()
+    for item in watchlist_items:
+        db.session.delete(item)
+    db.session.commit()  # Commit after deleting watchlist items
 
     db.session.delete(alert)
     db.session.commit()

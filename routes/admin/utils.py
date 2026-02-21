@@ -2,7 +2,7 @@ from model.transaction import Transaction
 from model.transaction import Transaction
 from model.user import User
 from extensions import db
-from flask import jsonify
+from flask import abort, jsonify
 
 
 def get_transaction_stats():
@@ -23,12 +23,12 @@ def get_transaction_stats():
 def change_user_status(user, status=None, role=None):
     if status:
         if status not in ['ACTIVE', 'SUSPENDED', 'BANNED']:
-            return jsonify({'error': 'Invalid status'}), 400
+            abort(400, "Invalid status")
         else:
             user.status = status
     if role:
         if role not in ['USER', 'ADMIN']:
-            return jsonify({'error': 'Invalid role'}), 400
+            abort(400, "Invalid role")
         else:
             user.role = role
     return user
