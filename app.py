@@ -9,6 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timezone
 import utils
+from model.userPreferences import UserPreferences   
 
 # Import blueprints
 from routes.auth import auth_bp
@@ -18,6 +19,7 @@ from routes.offers import offers_bp
 from routes.rateAlerts import rateAlerts_bp
 from routes.watchlist import watchlist_bp
 from routes.csvExports import csvExports_bp
+from routes.preferences import preferences_bp
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_config
@@ -37,6 +39,7 @@ app.register_blueprint(offers_bp)
 app.register_blueprint(rateAlerts_bp)
 app.register_blueprint(watchlist_bp)
 app.register_blueprint(csvExports_bp)
+app.register_blueprint(preferences_bp)
 
 # Alert checking function
 def check_alerts():

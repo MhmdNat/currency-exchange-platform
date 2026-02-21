@@ -1,9 +1,11 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from datetime import datetime, timedelta, timezone
+import jwtAuth  
 from model.transaction import Transaction
 import utils
+from model.userPreferences import UserPreferences
 
 exchange_bp = Blueprint('exchange', __name__)
 limiter = Limiter(key_func=get_remote_address)
@@ -25,8 +27,29 @@ def get_exchange_rate():
 @exchange_bp.route("/exchangeRate/analytics", methods=["GET"])
 @limiter.limit("10 per minute")
 def get_exchange_rate_analytics():
-    start_str = request.args.get("start") #this would be "2026-02-16"
+    start_str = request.args.get("start")
     end_str = request.args.get("end")
+
+    # Use user preferences for start/end independently
+    user_id = jwtAuth.get_auth_user(request)
+    #because authentication is optional for this endpoint, 
+    # we check if user_id exists before trying to access preferences. 
+    # If no user_id and no provided start/end use defaults in conversion function
+    if user_id:
+        prefs = UserPreferences.query.filter_by(user_id=user_id).first()
+        if prefs:
+            now = datetime.now(timezone.utc)
+            if not start_str:
+                if prefs.default_time_range == '1d':
+                    start_str = (now - timedelta(days=1)).strftime('%Y-%m-%d') #changes to string for conversion function
+                elif prefs.default_time_range == '3d':
+                    start_str = (now - timedelta(days=3)).strftime('%Y-%m-%d')
+                elif prefs.default_time_range == '1w':
+                    start_str = (now - timedelta(weeks=1)).strftime('%Y-%m-%d')
+                elif prefs.default_time_range == '1m':
+                    start_str = (now - timedelta(days=30)).strftime('%Y-%m-%d')
+            if not end_str:
+                end_str = now.strftime('%Y-%m-%d')
 
     #converts to datetime objects, defaults to three days ago and current time
     try:
@@ -83,8 +106,29 @@ def get_exchange_rate_history():
     #returns lists of rates per interval
     start_str = request.args.get("start")
     end_str = request.args.get("end")
-    interval = request.args.get("interval", "daily") #default is daily
+    interval = request.args.get("interval") # if user provides interval use it, otherwise use preference
 
+    # Use user preferences if not provided
+    user_id = jwtAuth.get_auth_user(request)
+    if user_id:
+        prefs = UserPreferences.query.filter_by(user_id=user_id).first()
+        if prefs:
+            if not start_str:
+                now = datetime.now(timezone.utc)
+                if prefs.default_time_range == '1d':
+                    start_str = (now - timedelta(days=1)).strftime('%Y-%m-%d')
+                elif prefs.default_time_range == '3d':
+                    start_str = (now - timedelta(days=3)).strftime('%Y-%m-%d')
+                elif prefs.default_time_range == '1w':
+                    start_str = (now - timedelta(weeks=1)).strftime('%Y-%m-%d')
+                elif prefs.default_time_range == '1m':
+                    start_str = (now - timedelta(days=30)).strftime('%Y-%m-%d')
+                end_str = now.strftime('%Y-%m-%d')
+            if not interval:
+                interval = prefs.graph_interval
+            if not end_str:
+                end_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')       
+    print(f"Received request for exchange rate history with start={start_str}, end={end_str}, interval={interval}")
     #converts to datetime objects, defaults to three days ago and current time
     try:
         start_time, end_time = utils.convert_str_to_time(start_str, end_str)

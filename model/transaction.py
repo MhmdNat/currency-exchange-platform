@@ -2,7 +2,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from extensions import db, ma
 from sqlalchemy import CheckConstraint
 from marshmallow import fields
-from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
 from datetime import datetime, timezone
 from model.user import User
 
