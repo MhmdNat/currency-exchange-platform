@@ -1,5 +1,10 @@
+from flask import abort
+
 from model.transaction import Transaction
 from datetime import timezone, datetime, timedelta
+from app import db
+from model.user import User
+from werkzeug.exceptions import HTTPException
 
 #reusable functions
 
@@ -114,3 +119,18 @@ def get_current_exchange_rates():
         "usd_to_lbp": avg_weighted_usd_to_lbp_rate,
         "lbp_to_usd": avg_weighted_lbp_to_usd_rate
     }
+
+def validate_rate_alert_fields(direction, condition, threshold_rate):
+    # Validate direction
+    allowed_directions = ["BUY_USD", "SELL_USD"]
+    if direction not in allowed_directions:
+        abort(400, "INVALID direction. Must be BUY_USD or SELL_USD")
+
+    # Validate condition
+    if condition not in ["above", "below"]:
+        abort(400, "INVALID condition. Must be 'above' or 'below'")
+
+    # Validate threshold_rate
+    if not isinstance(threshold_rate, (int, float)) or threshold_rate <= 0:
+        abort(400, "INVALID threshold_rate. Must be a positive number")
+    return None

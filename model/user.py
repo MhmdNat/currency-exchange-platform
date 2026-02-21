@@ -8,7 +8,6 @@ class User(db.Model):
     hashed_password: Mapped[str] = mapped_column(db.String(128))
     role: Mapped[str] = mapped_column(db.String(10), default="USER")  # USER or ADMIN
     status: Mapped[str] = mapped_column(db.String(15), default="ACTIVE")  # ACTIVE, SUSPENDED, BANNED
-    
     preferences = db.relationship('UserPreferences', uselist=False)
     #one directional relationship to UserPreferences, uselist=False indicates one-to-one relationship
 
