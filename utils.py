@@ -18,7 +18,6 @@ def get_transactions_by_date(startDate, endDate):
         Transaction.added_date >= startDate,
         Transaction.added_date < endDate,
         Transaction.usd_to_lbp == False).all()
-    print(usd_to_lbp_transactions)
     return (usd_to_lbp_transactions, lbp_to_usd_transactions)
 
 
@@ -87,3 +86,31 @@ def extract_timestamps_and_rates(transactions, key_func):
             #append the rate
             weighted_rates.append(weighted_avg)
         return timestamps, weighted_rates
+
+
+def get_current_exchange_rates():
+    threeDays = timedelta(days=3)
+    currentTime = datetime.now(timezone.utc)
+    threeDaysAgo = currentTime - threeDays
+
+    #get transactions by time
+    usd_to_lbp_transactions, lbp_to_usd_transactions = get_transactions_by_date(
+        threeDaysAgo, 
+        currentTime
+    )
+
+    # get rates of transactions
+    usd_to_lbp_rates_weighted, lbp_to_usd_rates_weighted = get_transaction_rates_weighted(
+        usd_to_lbp_transactions,
+        lbp_to_usd_transactions
+    )
+
+    # final rate of each direction
+    avg_weighted_usd_to_lbp_rate = get_weighted_avg_rate(usd_to_lbp_rates_weighted)
+    avg_weighted_lbp_to_usd_rate = get_weighted_avg_rate(lbp_to_usd_rates_weighted)
+
+    print(f"current rates: USD to LBP: {avg_weighted_usd_to_lbp_rate}, LBP to USD: {avg_weighted_lbp_to_usd_rate}")
+    return {
+        "usd_to_lbp": avg_weighted_usd_to_lbp_rate,
+        "lbp_to_usd": avg_weighted_lbp_to_usd_rate
+    }

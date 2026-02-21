@@ -68,10 +68,13 @@ def get_my_rate_alerts():
 @jwt_required
 def delete_rate_alert(alert_id):
     user_id = g.current_user_id
-    alert = RateAlert.query.filter_by(id=alert_id, user_id=user_id).first()
+    alert = RateAlert.query.filter_by(id=alert_id).first()
 
     if not alert:
-        abort(404, "Alert not found or not owned by user")
+        abort(404, "Alert not found")
+
+    if alert.user_id != user_id:
+        abort(403, "You can only delete your own alerts")
 
     db.session.delete(alert)
     db.session.commit()

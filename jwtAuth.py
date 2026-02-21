@@ -17,8 +17,6 @@ def create_token(user_id):
         SECRET_KEY,
         algorithm='HS256'
     )
-    print(token)
-    #print(decode_token(token))
     return token
 
 

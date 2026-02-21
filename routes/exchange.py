@@ -12,30 +12,12 @@ limiter = Limiter(key_func=get_remote_address)
 @exchange_bp.route('/exchangeRate', methods=['GET'])
 @limiter.limit("10 per minute")
 def get_exchange_rate():
-    threeDays = timedelta(days=3)
-    currentTime = datetime.now(timezone.utc)
-    threeDaysAgo = currentTime - threeDays
-
-    #get transactions by time
-    usd_to_lbp_transactions, lbp_to_usd_transactions = utils.get_transactions_by_date(
-        threeDaysAgo, 
-        currentTime
-    )
-
-    # get rates of transactions
-    usd_to_lbp_rates_weighted, lbp_to_usd_rates_weighted = utils.get_transaction_rates_weighted(
-        usd_to_lbp_transactions,
-        lbp_to_usd_transactions
-    )
-
-    # final rate of each direction
-    avg_weighted_usd_to_lbp_rate = utils.get_weighted_avg_rate(usd_to_lbp_rates_weighted)
-    avg_weighted_lbp_to_usd_rate = utils.get_weighted_avg_rate(lbp_to_usd_rates_weighted)
+    rates = utils.get_current_exchange_rates()
 
     return jsonify({
         "message":"Retrieved average exchange rates",
-        "usd_to_lbp":avg_weighted_usd_to_lbp_rate,
-        "lbp_to_usd":avg_weighted_lbp_to_usd_rate
+        "usd_to_lbp": rates["usd_to_lbp"],
+        "lbp_to_usd": rates["lbp_to_usd"]
     }), 200
 
 
