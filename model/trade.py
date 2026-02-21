@@ -2,21 +2,19 @@ from extensions import db, ma
 from datetime import datetime, timezone
 from marshmallow import fields
 
+
 class Trade(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-
     offer_id = db.Column(db.Integer, db.ForeignKey("offer.id"), nullable=False)
-
     #maker creates the offer
     #taker accepts
     maker_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     taker_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-
+    maker_username = db.Column(db.String(30), nullable=False)
+    taker_username = db.Column(db.String(30), nullable=False)
     amount_from = db.Column(db.Float, nullable=False)
     amount_to = db.Column(db.Float, nullable=False)
-
     executed_rate = db.Column(db.Float, nullable=False)
-
     created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
     direction = db.Column(db.String(10), nullable=False)
     # values could be:
@@ -29,6 +27,8 @@ class Trade(db.Model):
         offer_id,
         maker_id,
         taker_id,
+        maker_username,
+        taker_username,
         amount_from,
         amount_to,
         executed_rate,
@@ -38,6 +38,8 @@ class Trade(db.Model):
             offer_id=offer_id,
             maker_id=maker_id,
             taker_id=taker_id,
+            maker_username=maker_username,
+            taker_username=taker_username,
             amount_from=amount_from,
             amount_to=amount_to,
             executed_rate=executed_rate,
@@ -55,6 +57,8 @@ class TradeSchema(ma.SQLAlchemyAutoSchema):
             "offer_id",
             "maker_id",
             "taker_id",
+            "maker_username",
+            "taker_username",
             "amount_from",
             "amount_to",
             "executed_rate",

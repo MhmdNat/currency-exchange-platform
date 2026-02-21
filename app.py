@@ -17,6 +17,7 @@ from routes.transactions import transactions_bp
 from routes.offers import offers_bp
 from routes.rateAlerts import rateAlerts_bp
 from routes.watchlist import watchlist_bp
+from routes.csvExports import csvExports_bp
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_config
@@ -35,6 +36,7 @@ app.register_blueprint(transactions_bp)
 app.register_blueprint(offers_bp)
 app.register_blueprint(rateAlerts_bp)
 app.register_blueprint(watchlist_bp)
+app.register_blueprint(csvExports_bp)
 
 # Alert checking function
 def check_alerts():

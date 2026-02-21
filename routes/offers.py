@@ -6,6 +6,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from model.offer import Offer, OfferSchema
 from model.trade import Trade, TradeSchema
+from model.user import User
 from model.transaction import Transaction
 from model.userBalance import UserBalance
 from jwtAuth import jwt_required
@@ -212,11 +213,19 @@ def accept_offer(offer_id):
             if taker_balance.lbp_amount < lbp_amount:
                 abort(400, f"Insufficient LBP balance. Required: {lbp_amount}, Available: {taker_balance.lbp_amount}")
 
+        # Get usernames for maker and taker
+        maker_username = User.query.filter_by(id=offer.user_id).first()
+        taker_username = User.query.filter_by(id=user_id).first()
+        maker_username = maker_username.username if maker_username else "Unknown"
+        taker_username = taker_username.username if taker_username else "Unknown"
+
         # Create Trade record
         trade = Trade(
             offer_id=offer.id,
             maker_id=offer.user_id,
             taker_id=user_id,
+            maker_username=maker_username,
+            taker_username=taker_username,
             amount_from=requested_amount, # amount that taker will get
             amount_to=amount_to,
             direction=dir, # specifies if taker was buying or selling usd

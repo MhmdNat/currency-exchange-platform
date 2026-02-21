@@ -1,11 +1,12 @@
-from flask import Blueprint, request, jsonify, abort, g
+from flask import Blueprint, request, jsonify, abort
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from model.transaction import Transaction, TransactionSchema, db
-from jwtAuth import jwt_required
+
 import jwtAuth
 from datetime import datetime, timedelta, timezone
 from jwt import ExpiredSignatureError, InvalidTokenError
+
 
 transactions_bp = Blueprint('transactions', __name__)
 limiter = Limiter(key_func=get_remote_address)
