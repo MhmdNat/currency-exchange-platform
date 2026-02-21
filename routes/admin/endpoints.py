@@ -161,3 +161,16 @@ def delete_user_alerts(user_id, alert_id):
     return '', 204
 
     
+@admin_bp.route('/admin/user/<int:user_id>/status', methods=['PUT'])
+@admin_required
+def set_user_status(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    data = request.json
+    status = data.get('status')
+    if status not in ['ACTIVE', 'SUSPENDED', 'BANNED']:
+        return jsonify({'error': 'Invalid status'}), 400
+    user.status = status
+    db.session.commit()
+    return jsonify(user_schema.dump(user)), 200

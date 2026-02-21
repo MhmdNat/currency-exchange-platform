@@ -70,6 +70,12 @@ def jwt_required(f):
         if not user_id:
             abort(401, "Unauthorized user")
 
+        #added for suspended/banned user check, 
+        #if user is suspended or banned they cannot access any authenticated route, even with a valid token
+        user = User.query.get(user_id)
+        if not user or user.status in ["SUSPENDED", "BANNED"]:
+            abort(403, "User access denied: account suspended or banned, contact support for more information")
+
         g.current_user_id = user_id
         return f(*args, **kwargs)
     return decorated
