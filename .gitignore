@@ -1,9 +1,37 @@
 venv/
+.venv/
 .env
+.env.*
+!.env.example
+
+# Keep local machine-specific DB settings out of git
 db_config.py
+
+# Python cache/build artifacts
 __pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE/editor
+.vscode/
+.idea/
 **/.idea/shelf/
 **/.idea/tasks.xml
 **/.idea/workspace.xml
 **/.idea/usage.statistics.xml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local backups and generated data
 backups/
+*.sqlite3
+*.db
+
+# Logs
+*.log
