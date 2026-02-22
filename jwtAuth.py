@@ -45,7 +45,6 @@ def decode_token(token):
 
 def get_auth_user(authenticated_request):
     auth_header = authenticated_request.headers.get('Authorization')
-    print(auth_header)
     token = extract_auth_token(auth_header)
     
     return decode_token(token) if token else None

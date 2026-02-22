@@ -6,6 +6,7 @@ from model.userBalance import UserBalance
 from model.audit_log import AuditLog, AuditActionType
 from extensions import bcrypt, db
 import jwtAuth
+from utils import create_audit_log
 
 auth_bp = Blueprint('auth', __name__)
 limiter = Limiter(key_func=get_remote_address)
@@ -94,7 +95,7 @@ def authenticate():
     
     # Log failed login (user not found)
     if not user:
-        log = AuditLog(
+        create_audit_log(
             action_type=AuditActionType.LOGIN_FAILED,
             description=f"Login failed: Username ({user_name}) does not exist.",
             user_id=None,
@@ -102,14 +103,12 @@ def authenticate():
             entity_id=None,
             ip_address=request.remote_addr
         )
-        db.session.add(log)
-        db.session.commit()
         return jsonify({"error":f'Username ({user_name}) does not exist'}), 401
 
     #users exists need to check password
     correct_password = bcrypt.check_password_hash(user.hashed_password, password)
     if not correct_password:
-        log = AuditLog(
+        create_audit_log(
             action_type=AuditActionType.LOGIN_FAILED,
             description=f"Login failed: Incorrect password for user_id {user.id}.",
             user_id=user.id,
@@ -117,13 +116,11 @@ def authenticate():
             entity_id=user.id,
             ip_address=request.remote_addr
         )
-        db.session.add(log)
-        db.session.commit()
         return jsonify({"error":'Password does not match'}), 401
 
     # Successful login: create token and log event
     token = jwtAuth.create_token(user.id)
-    log = AuditLog(
+    create_audit_log(
         action_type=AuditActionType.LOGIN_SUCCESS,
         description=f"Login successful for user_id {user.id}.",
         user_id=user.id,
@@ -131,8 +128,6 @@ def authenticate():
         entity_id=user.id,
         ip_address=request.remote_addr
     )
-    db.session.add(log)
-    db.session.commit()
     return jsonify({
         "token": token
     }), 200

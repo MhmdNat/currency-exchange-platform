@@ -1,6 +1,8 @@
 from flask import Blueprint, request, jsonify, g
 from extensions import db
+from model.user import User
 from model.userPreferences import UserPreferences, UserPreferencesSchema
+from utils import log_preference_change
 from jwtAuth import jwt_required
 
 preferences_bp = Blueprint('preferences', __name__)
@@ -35,6 +37,15 @@ def set_preferences():
     if 'graph_interval' in data and data['graph_interval'] in ['hourly', 'daily']:
         prefs.graph_interval = data['graph_interval']
     db.session.commit()
+    # Audit log for preference updateuser
+    actor_user = User.query.get(user_id)
+    log_preference_change(
+        actor_user_id=user_id,
+        actor_role="USER",
+        target_user_id=user_id,
+        prefs=prefs,
+        ip_address=request.remote_addr
+    )
     return jsonify({
         'message': 'Preferences updated',
         'preferences': preference_schema.dump(prefs)

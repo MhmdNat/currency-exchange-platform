@@ -9,8 +9,10 @@ from model.trade import Trade, TradeSchema
 from model.user import User
 from model.transaction import Transaction
 from model.userBalance import UserBalance
+from model.audit_log import AuditLog, AuditActionType
 from jwtAuth import jwt_required
 from extensions import db
+from utils import create_audit_log
 
 offers_bp = Blueprint('offers', __name__)
 limiter = Limiter(key_func=get_remote_address)
@@ -93,6 +95,16 @@ def create_offer():
         db.session.add(offer)
         db.session.commit()
 
+        # Audit log for offer creation
+        ip_address = request.remote_addr
+        log = create_audit_log(
+            action_type=AuditActionType.OFFER_CREATED,
+            description=f"Offer created: {amount} {from_currency} to {to_currency} at rate {exchange_rate}.",
+            user_id=user_id,
+            entity_type="Offer",
+            entity_id=offer.id,
+            ip_address=request.remote_addr
+        )
         return jsonify({
             "message": "Offer created successfully",
             "offer": offer_schema.dump(offer)
@@ -183,29 +195,28 @@ def accept_offer(offer_id):
 
         # Get taker and maker balances with lock
         taker_balance = db.session.query(UserBalance).filter_by(user_id=user_id).with_for_update().first()
-        if not taker_balance:
-            abort(400, "Taker balance not found")
-
         maker_balance = db.session.query(UserBalance).filter_by(user_id=offer.user_id).with_for_update().first()
+        
         if not maker_balance:
             abort(400, "Maker balance not found")
+        if not taker_balance:
+            abort(400, "Taker balance not found")
+        
 
-        # Calculate what the taker will give to maker
-        amount_to = requested_amount * offer.exchange_rate
-
-        # Determine transaction values based on offer direction
-        if offer.from_currency == "USD": # so taker is buying usd
+        if offer.from_currency == "USD":
             usd_amount = requested_amount # maker gives USD
+            amount_to = requested_amount * offer.exchange_rate  
             lbp_amount = amount_to # taker gives LBP
             usd_to_lbp = False
             dir = "buy"
         else:
+            amount_to = requested_amount / offer.exchange_rate # maker gives LBP
             usd_amount = amount_to # taker receives USD
             lbp_amount = requested_amount # maker gives LBP
             usd_to_lbp = True
             dir = "sell"
 
-        # Check if taker has sufficient balance
+        # Check if taker has sufficient balance maker's balance was already reserved at offer creation, so we only check the taker balance here 
         if usd_to_lbp:
             if taker_balance.usd_amount < usd_amount:
                 abort(400, f"Insufficient USD balance. Required: {usd_amount}, Available: {taker_balance.usd_amount}")
@@ -214,11 +225,12 @@ def accept_offer(offer_id):
                 abort(400, f"Insufficient LBP balance. Required: {lbp_amount}, Available: {taker_balance.lbp_amount}")
 
         # Get usernames for maker and taker
-        maker_username = User.query.filter_by(id=offer.user_id).first()
-        taker_username = User.query.filter_by(id=user_id).first()
-        maker_username = maker_username.username if maker_username else "Unknown"
-        taker_username = taker_username.username if taker_username else "Unknown"
+        maker = User.query.filter_by(id=offer.user_id).first()
+        taker = User.query.filter_by(id=user_id).first()
+        maker_username = maker.user_name if maker and maker.user_name else "Unknown"
+        taker_username = taker.user_name if taker and taker.user_name else "Unknown"
 
+        
         # Create Trade record
         trade = Trade(
             offer_id=offer.id,
@@ -260,9 +272,20 @@ def accept_offer(offer_id):
         offer.amount_remaining -= requested_amount
         if offer.amount_remaining == 0:
             offer.status = "FILLED"
+            action_type = AuditActionType.OFFER_FULLY_FILLED
         else:
             offer.status = "PARTIAL"
+            action_type = AuditActionType.OFFER_PARTIALLY_FILLED
 
+        # Audit log for offer acceptance
+        create_audit_log(
+            action_type=action_type,
+            description=f"Offer {offer.id} accepted by user {user_id}: {requested_amount} {offer.from_currency} at rate {offer.exchange_rate}.",
+            user_id=user_id,
+            entity_type="Offer",
+            entity_id=offer.id,
+            ip_address=request.remote_addr
+        )
         db.session.commit()
 
         return jsonify({
@@ -280,7 +303,7 @@ def accept_offer(offer_id):
         abort(500, "Trade offer could not be accepted")
 
 
-@offers_bp.route("/offers/<int:offer_id>/cancel", methods=["POST"])
+@offers_bp.route("/offers/<int:offer_id>", methods=["DELETE"])
 @jwt_required
 def cancel_offer(offer_id):
     user_id = g.current_user_id
@@ -312,7 +335,16 @@ def cancel_offer(offer_id):
         offer.amount_remaining = 0
         db.session.commit()
 
-        return jsonify({"message": "Offer cancelled successfully", "offer_id": offer.id}), 200
+        # Audit log for offer cancellation
+        create_audit_log(
+            action_type=AuditActionType.OFFER_CANCELLED,
+            description=f"Offer {offer.id} cancelled by user {user_id}.",
+            user_id=user_id,
+            entity_type="Offer",
+            entity_id=offer.id,
+            ip_address=request.remote_addr
+        )
+        return '', 204
 
     except HTTPException:
         raise

@@ -2,10 +2,11 @@ from flask import Blueprint, request, jsonify, abort
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from model.transaction import Transaction, TransactionSchema, db
-
+from model.audit_log import AuditLog, AuditActionType
 import jwtAuth
 from datetime import datetime, timedelta, timezone
 from jwt import ExpiredSignatureError, InvalidTokenError
+from utils import create_audit_log
 
 
 transactions_bp = Blueprint('transactions', __name__)
@@ -85,13 +86,22 @@ def add_transaction():
         usd_to_lbp=usd_to_lbp,
         user_id=user_id,
     )
-    # add to the session and commit the change to save to db
     db.session.add(t)
     db.session.commit()
+
+
+    create_audit_log(
+        action_type=AuditActionType.TRANSACTION_CREATED,
+        description=f"Transaction created: USD {usd_amount}, LBP {lbp_amount}, Direction: {'USD to LBP' if usd_to_lbp else 'LBP to USD'}.",
+        user_id=user_id,
+        entity_type="Transaction",
+        entity_id=t.id,
+        ip_address=request.remote_addr
+    )
+
     return jsonify(
         {
-            "message":"Transaction created successfully",
+            "message": "Transaction created successfully",
             "transaction": transaction_schema.dump(t),
-
         }
     ), 201

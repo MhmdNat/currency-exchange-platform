@@ -1,3 +1,5 @@
+from model.audit_log import AuditLog, AuditActionType
+from flask import request
 from flask import abort
 
 from model.transaction import Transaction
@@ -134,3 +136,44 @@ def validate_rate_alert_fields(direction, condition, threshold_rate):
     if not isinstance(threshold_rate, (int, float)) or threshold_rate <= 0:
         abort(400, "INVALID threshold_rate. Must be a positive number")
     return None
+
+
+def create_audit_log(action_type, description, user_id=None, entity_type=None, entity_id=None, ip_address=None):
+    """
+    create and commit an audit log entry.
+    Automatically fills IP address from request context.
+    """
+    log = AuditLog(
+        action_type=action_type,
+        description=description,
+        user_id=user_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        ip_address=ip_address
+    )
+    from extensions import db
+    db.session.add(log)
+    db.session.commit()
+
+
+def log_preference_change(actor_user_id, actor_role, target_user_id, prefs, ip_address=None):
+    """
+    Logs a preference change, whether by user or admin.
+    actor_user_id: who made the change
+    actor_role: role of the actor ("USER" or "ADMIN")
+    target_user_id: whose preferences were changed
+    prefs: UserPreferences object after change
+    ip_address: IP address of the actor
+    """
+    desc = (
+        f"Preferences updated for user_id={target_user_id} by {actor_role} user_id={actor_user_id}. "
+        f"New values: default_time_range={prefs.default_time_range}, graph_interval={prefs.graph_interval}"
+    )
+    create_audit_log(
+        action_type=AuditActionType.PREFERENCE_UPDATED,
+        description=desc,
+        user_id=actor_user_id,
+        entity_type="UserPreferences",
+        entity_id=prefs.id,
+        ip_address=ip_address
+    )

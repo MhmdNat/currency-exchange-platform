@@ -1,4 +1,4 @@
-from flask import abort, request, jsonify
+from flask import abort, request, jsonify, g
 from jwtAuth import admin_required
 from model.user import User, UserSchema
 from model.transaction import Transaction
@@ -9,6 +9,7 @@ from extensions import db
 from flask import Blueprint
 from utils import validate_rate_alert_fields
 from routes.admin.utils import get_transaction_stats, change_user_status 
+from utils import log_preference_change
 
 
 
@@ -68,6 +69,17 @@ def manage_user_preferences(user_id):
         if 'graph_interval' in data and data['graph_interval'] in ['hourly', 'daily']:
             prefs.graph_interval = data['graph_interval']
         db.session.commit()
+        # Audit log for preference update (admin)
+        
+        actor_user_id = getattr(g, 'current_user_id', None)
+
+        log_preference_change(
+            actor_user_id=actor_user_id,
+            actor_role="ADMIN",
+            target_user_id=user_id,
+            prefs=prefs,
+            ip_address=request.remote_addr
+        )
         return jsonify({
             'message': 'Preferences created',
             'preferences': preferences_schema.dump(prefs)
