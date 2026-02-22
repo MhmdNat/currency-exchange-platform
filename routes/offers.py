@@ -286,6 +286,16 @@ def accept_offer(offer_id):
             entity_id=offer.id,
             ip_address=request.remote_addr
         )
+
+        # Notify taker (current user) of trade completion
+        from utils import create_notification
+        trade_msg = f"Trade completed: You {'bought' if dir=='buy' else 'sold'} {requested_amount} {offer.from_currency} at rate {offer.exchange_rate}."
+        create_notification(user_id, trade_msg, 'trade')
+
+        # Notify maker (offer owner) that their offer was accepted
+        maker_msg = f"Your offer #{offer.id} was accepted by {taker_username} for {requested_amount} {offer.from_currency} at rate {offer.exchange_rate}."
+        create_notification(offer.user_id, maker_msg, 'offer')
+
         db.session.commit()
 
         return jsonify({
@@ -333,6 +343,12 @@ def cancel_offer(offer_id):
         # mark as cancelled and zero remaining amount
         offer.status = "CANCELLED"
         offer.amount_remaining = 0
+
+        # Notify maker (offer owner) that their offer was cancelled
+        from utils import create_notification
+        cancel_msg = f"Your offer #{offer.id} was cancelled."
+        create_notification(user_id, cancel_msg, 'offer')
+
         db.session.commit()
 
         # Audit log for offer cancellation

@@ -1,3 +1,19 @@
+# --- Notification helper ---
+from model.notifications import Notification
+
+def create_notification(user_id, message, type_):
+    """
+    Create and commit a notification entry for a user.
+    type_: e.g. 'alert', 'offer', 'trade', etc.
+    """
+    notification = Notification(
+        user_id=user_id,
+        message=message,
+        type=type_
+    )
+    from extensions import db
+    db.session.add(notification)
+    db.session.commit()
 from model.audit_log import AuditLog, AuditActionType
 from flask import request
 from flask import abort

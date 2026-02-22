@@ -53,10 +53,3 @@ def set_preferences():
         'preferences': preference_schema.dump(prefs)
     }), 200
 
-
-@preferences_bp.route('/preferences/audit-logs', methods=['GET'])
-@jwt_required
-def view_my_audit_logs():
-    user_id = g.current_user_id
-    logs = AuditLog.query.filter_by(user_id=user_id).order_by(AuditLog.timestamp.desc()).all()
-    return jsonify(audit_logs_schema.dump(logs)), 200

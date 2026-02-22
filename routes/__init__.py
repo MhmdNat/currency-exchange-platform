@@ -1,1 +1,1 @@
-# Routes package
+"""Routes package: contains all route modules and blueprints for the application."""

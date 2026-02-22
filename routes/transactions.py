@@ -88,6 +88,12 @@ def add_transaction():
     )
     db.session.add(t)
     db.session.commit()
+    # Notify user of transaction completion
+    from utils import create_notification
+    if user_id:
+        direction = 'USD to LBP' if usd_to_lbp else 'LBP to USD'
+        msg = f"Transaction completed: {usd_amount} USD, {lbp_amount} LBP, Direction: {direction}."
+        create_notification(user_id, msg, 'transaction')
 
 
     create_audit_log(

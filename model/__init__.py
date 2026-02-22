@@ -1,1 +1,2 @@
-"""Package for all database models."""
+
+"""Model package: contains all database models and schemas."""

@@ -9,6 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timezone
 import utils  
+from model.notifications import Notification
 
 # Import blueprints
 from routes.auth import auth_bp
@@ -20,6 +21,7 @@ from routes.watchlist import watchlist_bp
 from routes.csvExports import csvExports_bp
 from routes.preferences import preferences_bp
 from routes.admin.endpoints import admin_bp
+from routes.logs import logs_bp
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_config
@@ -41,6 +43,7 @@ app.register_blueprint(watchlist_bp)
 app.register_blueprint(csvExports_bp)
 app.register_blueprint(preferences_bp)
 app.register_blueprint(admin_bp) 
+app.register_blueprint(logs_bp)
 
 # Alert checking function
 def check_alerts():
@@ -58,8 +61,9 @@ def check_alerts():
                (alert.condition == 'below' and current_rate < alert.threshold_rate):
                 alert.is_triggered = True
                 alert.triggered_at = datetime.now(timezone.utc)
-                print(f"Alert triggered for user {alert.user_id}: {alert.direction} rate {current_rate} {alert.condition} {alert.threshold_rate}")
-        
+                # Store notification in db
+                message = f"Alert triggered: {alert.direction} rate {current_rate} {alert.condition} {alert.threshold_rate}"
+                utils.create_notification(alert.user_id, message, 'alert')
         db.session.commit()
 
 # Set up scheduler
