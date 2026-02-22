@@ -1,3 +1,10 @@
+from model.audit_log import AuditLog
+from model.audit_log_schema import audit_logs_schema
+@admin_bp.route('/admin/audit-logs', methods=['GET'])
+@admin_required
+def view_all_audit_logs():
+    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
+    return jsonify(audit_logs_schema.dump(logs)), 200
 from flask import abort, request, jsonify, g
 from jwtAuth import admin_required
 from model.user import User, UserSchema

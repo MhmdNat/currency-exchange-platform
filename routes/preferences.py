@@ -4,9 +4,11 @@ from model.user import User
 from model.userPreferences import UserPreferences, UserPreferencesSchema
 from utils import log_preference_change
 from jwtAuth import jwt_required
+from model.audit_log import AuditLog, AuditLogSchema    
 
 preferences_bp = Blueprint('preferences', __name__)
 preference_schema = UserPreferencesSchema()
+audit_logs_schema = AuditLogSchema() 
 
 @preferences_bp.route('/preferences', methods=['GET'])
 @jwt_required
@@ -50,3 +52,11 @@ def set_preferences():
         'message': 'Preferences updated',
         'preferences': preference_schema.dump(prefs)
     }), 200
+
+
+@preferences_bp.route('/preferences/audit-logs', methods=['GET'])
+@jwt_required
+def view_my_audit_logs():
+    user_id = g.current_user_id
+    logs = AuditLog.query.filter_by(user_id=user_id).order_by(AuditLog.timestamp.desc()).all()
+    return jsonify(audit_logs_schema.dump(logs)), 200
