@@ -3,6 +3,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from model.user import User, UserSchema
 from model.userBalance import UserBalance
+from model.audit_log import AuditLog, AuditActionType
 from extensions import bcrypt, db
 import jwtAuth
 
@@ -90,16 +91,48 @@ def authenticate():
     ).scalar_one_or_none()
 
     #unauthorized is 401, 403 is forbidden
-    if not user:
-        return jsonify({"error":f'Username ({user_name}) does not exist'}), 401
     
+    # Log failed login (user not found)
+    if not user:
+        log = AuditLog(
+            action_type=AuditActionType.LOGIN_FAILED,
+            description=f"Login failed: Username ({user_name}) does not exist.",
+            user_id=None,
+            entity_type="User",
+            entity_id=None,
+            ip_address=request.remote_addr
+        )
+        db.session.add(log)
+        db.session.commit()
+        return jsonify({"error":f'Username ({user_name}) does not exist'}), 401
+
     #users exists need to check password
-    correct_password=bcrypt.check_password_hash(user.hashed_password, password)
+    correct_password = bcrypt.check_password_hash(user.hashed_password, password)
     if not correct_password:
+        log = AuditLog(
+            action_type=AuditActionType.LOGIN_FAILED,
+            description=f"Login failed: Incorrect password for user_id {user.id}.",
+            user_id=user.id,
+            entity_type="User",
+            entity_id=user.id,
+            ip_address=request.remote_addr
+        )
+        db.session.add(log)
+        db.session.commit()
         return jsonify({"error":'Password does not match'}), 401
 
-    #correct initials at this stage create token
-    token=jwtAuth.create_token(user.id)
+    # Successful login: create token and log event
+    token = jwtAuth.create_token(user.id)
+    log = AuditLog(
+        action_type=AuditActionType.LOGIN_SUCCESS,
+        description=f"Login successful for user_id {user.id}.",
+        user_id=user.id,
+        entity_type="User",
+        entity_id=user.id,
+        ip_address=request.remote_addr
+    )
+    db.session.add(log)
+    db.session.commit()
     return jsonify({
-        "token":token
+        "token": token
     }), 200
