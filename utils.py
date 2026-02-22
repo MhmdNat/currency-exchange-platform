@@ -1,19 +1,3 @@
-# --- Notification helper ---
-from model.notifications import Notification
-
-def create_notification(user_id, message, type_):
-    """
-    Create and commit a notification entry for a user.
-    type_: e.g. 'alert', 'offer', 'trade', etc.
-    """
-    notification = Notification(
-        user_id=user_id,
-        message=message,
-        type=type_
-    )
-    from extensions import db
-    db.session.add(notification)
-    db.session.commit()
 from model.audit_log import AuditLog, AuditActionType
 from flask import request
 from flask import abort
@@ -23,6 +7,7 @@ from datetime import timezone, datetime, timedelta
 from app import db
 from model.user import User
 from werkzeug.exceptions import HTTPException
+from model.notifications import Notification
 
 #reusable functions
 
@@ -193,3 +178,18 @@ def log_preference_change(actor_user_id, actor_role, target_user_id, prefs, ip_a
         entity_id=prefs.id,
         ip_address=ip_address
     )
+
+
+def create_notification(user_id, message, type_):
+    """
+    Create and commit a notification entry for a user.
+    type_: e.g. 'alert', 'offer', 'trade', etc.
+    """
+    notification = Notification(
+        user_id=user_id,
+        message=message,
+        type=type_
+    )
+    from extensions import db
+    db.session.add(notification)
+    db.session.commit()

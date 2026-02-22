@@ -23,6 +23,7 @@ from routes.preferences import preferences_bp
 from routes.admin.endpoints import admin_bp
 from routes.logs import logs_bp
 from routes.notifications import notifications_bp
+from routes.admin.analytics import analytics_bp
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_config
@@ -46,6 +47,7 @@ app.register_blueprint(preferences_bp)
 app.register_blueprint(admin_bp) 
 app.register_blueprint(logs_bp)
 app.register_blueprint(notifications_bp)
+app.register_blueprint(analytics_bp)
 
 # Alert checking function
 def check_alerts():

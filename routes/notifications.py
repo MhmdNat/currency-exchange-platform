@@ -35,9 +35,11 @@ def mark_notification_read(notification_id):
 @jwt_required
 def delete_notification(notification_id):
     user_id = g.current_user_id
-    notification = Notification.query.filter_by(id=notification_id, user_id=user_id).first()
+    notification = Notification.query.filter_by(id=notification_id).first()
     if not notification:
         abort(404, 'Notification not found')
+    if notification.user_id != user_id:
+        abort(403, 'Unauthorized to delete this notification')
     db.session.delete(notification)
     db.session.commit()
     return jsonify({'message': 'Notification deleted'}), 200
