@@ -1,10 +1,4 @@
-from model.audit_log import AuditLog
-from model.audit_log_schema import audit_logs_schema
-@admin_bp.route('/admin/audit-logs', methods=['GET'])
-@admin_required
-def view_all_audit_logs():
-    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
-    return jsonify(audit_logs_schema.dump(logs)), 200
+from model.audit_log import AuditLog, AuditLogSchema
 from flask import abort, request, jsonify, g
 from jwtAuth import admin_required
 from model.user import User, UserSchema
@@ -24,6 +18,7 @@ admin_bp = Blueprint('admin', __name__)
 user_schema = UserSchema()
 preferences_schema = UserPreferencesSchema()
 rateAlert_schema = RateAlertSchema()
+audit_logs_schema = AuditLogSchema()
 
 
 @admin_bp.route('/admin/users', methods=['GET'])
@@ -208,3 +203,10 @@ def set_user_status(user_id):
     user.status = status
     db.session.commit()
     return jsonify(user_schema.dump(user)), 200
+
+
+@admin_bp.route('/admin/audit-logs', methods=['GET'])
+@admin_required
+def view_all_audit_logs():
+    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
+    return jsonify(audit_logs_schema.dump(logs)), 200

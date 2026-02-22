@@ -1,1 +1,1 @@
-#admin routes package init file
+# init file for admin blueprint
