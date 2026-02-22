@@ -1,15 +1,12 @@
 from flask import Blueprint, request, jsonify
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from model.user import User, UserSchema
 from model.userBalance import UserBalance
 from model.audit_log import AuditLog, AuditActionType
-from extensions import bcrypt, db
+from extensions import bcrypt, db, limiter, critical_rate_limit
 import jwtAuth
 from utils import create_audit_log
 
 auth_bp = Blueprint('auth', __name__)
-limiter = Limiter(key_func=get_remote_address)
 
 user_schema = UserSchema()
 
@@ -67,7 +64,8 @@ def add_user():
 
 
 @auth_bp.route("/authentication", methods=["POST"])
-@limiter.limit("10 per minute")
+@auth_bp.route("/auth/login", methods=["POST"])
+@critical_rate_limit
 def authenticate():
     data = request.json
     if not data:

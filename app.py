@@ -1,8 +1,6 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-from extensions import bcrypt, db, ma
+from extensions import bcrypt, db, ma, limiter
 from db_config import db_config
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -10,6 +8,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timezone
 import utils  
 from model.notifications import Notification
+from flask import jsonify
 
 # Import blueprints
 from routes.auth import auth_bp
@@ -33,8 +32,11 @@ CORS(app)
 db.init_app(app)
 ma.init_app(app)
 bcrypt.init_app(app)
+limiter.init_app(app)
 
-limiter = Limiter(app=app, key_func=get_remote_address)
+@app.errorhandler(429)
+def rate_limit_exceeded(e):
+    return jsonify({"error": "Too many requests. Please try again later."}), 429
 
 # Register blueprints
 app.register_blueprint(auth_bp)

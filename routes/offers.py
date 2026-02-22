@@ -2,8 +2,6 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify, abort, g
 from werkzeug.exceptions import HTTPException
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from model.offer import Offer, OfferSchema
 from model.trade import Trade, TradeSchema
 from model.user import User
@@ -11,12 +9,11 @@ from model.transaction import Transaction
 from model.userBalance import UserBalance
 from model.audit_log import AuditLog, AuditActionType
 from jwtAuth import jwt_required
-from extensions import db
+from extensions import db, limiter, critical_rate_limit
 from utils import create_audit_log
 from utils import create_notification
 
 offers_bp = Blueprint('offers', __name__)
-limiter = Limiter(key_func=get_remote_address)
 
 offer_schema = OfferSchema()
 trade_schema = TradeSchema(many=True)
@@ -160,6 +157,8 @@ def get_offers():
 
 
 @offers_bp.route("/offers/<int:offer_id>/accept", methods=["POST"])
+@offers_bp.route("/market/offers/<int:offer_id>/accept", methods=["POST"])
+@critical_rate_limit
 @jwt_required
 def accept_offer(offer_id):
     user_id = g.current_user_id

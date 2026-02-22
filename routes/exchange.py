@@ -1,14 +1,12 @@
 from flask import Blueprint, request, jsonify, g
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from datetime import datetime, timedelta, timezone
 import jwtAuth  
 from model.transaction import Transaction
 import utils
 from model.userPreferences import UserPreferences
+from extensions import limiter
 
 exchange_bp = Blueprint('exchange', __name__)
-limiter = Limiter(key_func=get_remote_address)
 
 #get exchange rate with rate limiting
 @exchange_bp.route('/exchangeRate', methods=['GET'])

@@ -1,6 +1,4 @@
 from flask import Blueprint, request, jsonify, abort
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from model.transaction import Transaction, TransactionSchema, db
 from model.userBalance import UserBalance
 from model.audit_log import AuditLog, AuditActionType
@@ -11,10 +9,10 @@ from datetime import datetime, timedelta, timezone
 from jwt import ExpiredSignatureError, InvalidTokenError
 from werkzeug.exceptions import HTTPException
 from utils import create_audit_log, create_notification
+from extensions import limiter, critical_rate_limit
 
 
 transactions_bp = Blueprint('transactions', __name__)
-limiter = Limiter(key_func=get_remote_address)
 
 transaction_schema = TransactionSchema()
 transactions_schema = TransactionSchema(many=True)
@@ -44,7 +42,8 @@ def get_user_transactions():
 
 #create transaction with rate limiter
 @transactions_bp.route('/transaction', methods=['POST'])
-@limiter.limit("10 per minute")
+@transactions_bp.route('/transactions', methods=['POST'])
+@critical_rate_limit
 @jwt_required
 def add_transaction():
     data = request.json
