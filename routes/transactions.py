@@ -6,7 +6,7 @@ from model.audit_log import AuditLog, AuditActionType
 import jwtAuth
 from datetime import datetime, timedelta, timezone
 from jwt import ExpiredSignatureError, InvalidTokenError
-from utils import create_audit_log
+from utils import create_audit_log, create_notification
 
 
 transactions_bp = Blueprint('transactions', __name__)
@@ -89,7 +89,6 @@ def add_transaction():
     db.session.add(t)
     db.session.commit()
     # Notify user of transaction completion
-    from utils import create_notification
     if user_id:
         direction = 'USD to LBP' if usd_to_lbp else 'LBP to USD'
         msg = f"Transaction completed: {usd_amount} USD, {lbp_amount} LBP, Direction: {direction}."

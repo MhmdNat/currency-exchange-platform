@@ -13,6 +13,7 @@ from model.audit_log import AuditLog, AuditActionType
 from jwtAuth import jwt_required
 from extensions import db
 from utils import create_audit_log
+from utils import create_notification
 
 offers_bp = Blueprint('offers', __name__)
 limiter = Limiter(key_func=get_remote_address)
@@ -288,7 +289,7 @@ def accept_offer(offer_id):
         )
 
         # Notify taker (current user) of trade completion
-        from utils import create_notification
+        
         trade_msg = f"Trade completed: You {'bought' if dir=='buy' else 'sold'} {requested_amount} {offer.from_currency} at rate {offer.exchange_rate}."
         create_notification(user_id, trade_msg, 'trade')
 
@@ -345,7 +346,6 @@ def cancel_offer(offer_id):
         offer.amount_remaining = 0
 
         # Notify maker (offer owner) that their offer was cancelled
-        from utils import create_notification
         cancel_msg = f"Your offer #{offer.id} was cancelled."
         create_notification(user_id, cancel_msg, 'offer')
 
