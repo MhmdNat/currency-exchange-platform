@@ -1,2 +1,1 @@
-
-"""Model package: contains all database models and schemas."""
+#init for model package

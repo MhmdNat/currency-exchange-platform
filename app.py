@@ -24,6 +24,7 @@ from routes.admin.endpoints import admin_bp
 from routes.logs import logs_bp
 from routes.notifications import notifications_bp
 from routes.admin.analytics import analytics_bp
+from routes.admin.rate_quality import rate_quality_bp
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_config
@@ -48,19 +49,48 @@ app.register_blueprint(admin_bp)
 app.register_blueprint(logs_bp)
 app.register_blueprint(notifications_bp)
 app.register_blueprint(analytics_bp)
+app.register_blueprint(rate_quality_bp)
 
 # Alert checking function
 def check_alerts():
     with app.app_context(): #This ensures the scheduler can access the database session and models properly
         #within the app
         from model.rateAlerts import RateAlert 
-        rates = utils.get_current_exchange_rates()
+        from services.rate_service import RateService
+
+        # Fetch latest stored rates for both supported pairs from the quality service
+        latest_rates = RateService.get_latest_rates_by_pair()
+        # Build an easy lookup map keyed by tuple: (base_currency, quote_currency)
+        rates_by_pair = {}
+        for item in latest_rates:
+            rate_obj = item["rate"]
+            pair_key = (rate_obj.base_currency, rate_obj.quote_currency)
+            rates_by_pair[pair_key] = rate_obj.rate_value
+
+        # Print latest rates every scheduler run for quick terminal monitoring
+        usd_to_lbp_rate = rates_by_pair.get(("USD", "LBP"))
+        lbp_to_usd_rate = rates_by_pair.get(("LBP", "USD"))
+        print(
+            f"[Rate Monitor] USD->LBP: {usd_to_lbp_rate} | "
+            f"LBP->USD: {lbp_to_usd_rate}"
+        )
         
+        # Process only alerts that have not been triggered yet
         alerts = RateAlert.query.filter_by(is_triggered=False).all()
         for alert in alerts:
-            current_rate = rates.get('lbp_to_usd' if alert.direction == 'BUY_USD' else 'usd_to_lbp', 0)
+            # Map business direction to the underlying pair used for comparison
+            if alert.direction == 'BUY_USD':
+                # BUY_USD checks the configured LBP -> USD pair
+                current_rate = rates_by_pair.get(("LBP", "USD"))
+            else:
+                # SELL_USD checks the configured USD -> LBP pair
+                current_rate = rates_by_pair.get(("USD", "LBP"))
+
+            # Skip this alert if we don't have a current rate for its pair
             if current_rate is None:
                 continue  # No rate available
+
+            # Trigger alert when threshold condition is met
             if (alert.condition == 'above' and current_rate > alert.threshold_rate) or \
                (alert.condition == 'below' and current_rate < alert.threshold_rate):
                 alert.is_triggered = True
@@ -68,6 +98,7 @@ def check_alerts():
                 # Store notification in db
                 message = f"Alert triggered: {alert.direction} rate {current_rate} {alert.condition} {alert.threshold_rate}"
                 utils.create_notification(alert.user_id, message, 'alert')
+        # Persist all triggered alert updates in one commit
         db.session.commit()
 
 # Set up scheduler
