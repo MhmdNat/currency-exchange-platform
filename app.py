@@ -20,10 +20,12 @@ from routes.watchlist import watchlist_bp
 from routes.csvExports import csvExports_bp
 from routes.preferences import preferences_bp
 from routes.admin.endpoints import admin_bp
+from routes.admin.backups import backups_bp
 from routes.logs import logs_bp
 from routes.notifications import notifications_bp
 from routes.admin.analytics import analytics_bp
 from routes.admin.rate_quality import rate_quality_bp
+from services.backup_service import BackupService
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_config
@@ -48,6 +50,7 @@ app.register_blueprint(watchlist_bp)
 app.register_blueprint(csvExports_bp)
 app.register_blueprint(preferences_bp)
 app.register_blueprint(admin_bp) 
+app.register_blueprint(backups_bp)
 app.register_blueprint(logs_bp)
 app.register_blueprint(notifications_bp)
 app.register_blueprint(analytics_bp)
@@ -103,10 +106,21 @@ def check_alerts():
         # Persist all triggered alert updates in one commit
         db.session.commit()
 
-# Set up scheduler
-scheduler = BackgroundScheduler()
-scheduler.add_job(check_alerts, IntervalTrigger(seconds=60))  # Check every minute
-scheduler.start()
+
+def run_automated_backup():
+    with app.app_context():
+        BackupService.create_backup(trigger="automated")
+
+
+def setup_scheduler():
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(check_alerts, IntervalTrigger(seconds=60))  # Check every minute
+    scheduler.add_job(run_automated_backup, IntervalTrigger(hours=6))  # Automated backups
+    scheduler.start()
+    return scheduler
+
+
+scheduler = setup_scheduler()
 
 if __name__ == "__main__":
     app.run(debug=False)

@@ -6,3 +6,4 @@ __pycache__/
 **/.idea/tasks.xml
 **/.idea/workspace.xml
 **/.idea/usage.statistics.xml
+backups/
