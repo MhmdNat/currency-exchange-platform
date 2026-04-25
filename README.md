@@ -112,7 +112,7 @@ Authorization: Bearer <TOKEN>
 
 ### 5.2 Postman testing checklist
 - Create a collection and set `baseUrl = http://127.0.0.1:5000`.
-- Test public endpoints first:
+- Public endpoints:
   - `GET {{baseUrl}}/exchangeRate`
   - `GET {{baseUrl}}/exchangeRate/analytics`
   - `GET {{baseUrl}}/exchangeRate/history`
@@ -127,29 +127,6 @@ Authorization: Bearer <TOKEN>
   - `GET {{baseUrl}}/admin/analytics/transaction-volume`
   - `POST {{baseUrl}}/admin/backup`
 
-### 5.3 Example curl commands
-
-Register:
-```bash
-curl -X POST http://127.0.0.1:5000/user \
-  -H "Content-Type: application/json" \
-  -d '{"user_name":"alice","password":"StrongPass123"}'
-```
-
-Login:
-```bash
-curl -X POST http://127.0.0.1:5000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"user_name":"alice","password":"StrongPass123"}'
-```
-
-Create transaction (replace token):
-```bash
-curl -X POST http://127.0.0.1:5000/transaction \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <TOKEN>" \
-  -d '{"usd_amount":100,"lbp_amount":0,"usd_to_lbp":true}'
-```
 
 ## 6. Main Endpoint Groups
 
