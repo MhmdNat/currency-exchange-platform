@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, g
 from datetime import datetime, timedelta, timezone
+from statistics import pstdev
 import jwtAuth  
 from model.transaction import Transaction
 import utils
@@ -8,16 +9,83 @@ from extensions import limiter
 
 exchange_bp = Blueprint('exchange', __name__)
 
+
+def _extract_ordered_rates_with_timestamps(transactions):
+    """Return chronologically ordered (timestamp_iso, rate) entries."""
+    ordered = sorted(transactions, key=lambda t: t.added_date)
+    points = []
+    for t in ordered:
+        if not t.usd_amount:
+            continue
+        rate = t.lbp_amount / t.usd_amount
+        points.append((t.added_date.isoformat(), rate))
+    return points
+
+
+def _calculate_insights(rate_points):
+    """Compute trend, volatility, and biggest spike from ordered rate points."""
+    if len(rate_points) < 2:
+        return {
+            "trend": "stable",
+            "volatility": "insufficient data",
+            "biggest_spike": None,
+        }
+
+    rates = [r for _, r in rate_points]
+    pct_change = ((rates[-1] - rates[0]) / rates[0] * 100) if rates[0] else 0
+
+    if pct_change > 0.50:
+        trend = "up"
+    elif pct_change < -0.50:
+        trend = "down"
+    else:
+        trend = "stable"
+
+    returns = []
+    biggest_spike = {"timestamp": None, "value": 0.0}
+    for idx in range(1, len(rate_points)):
+        prev_rate = rate_points[idx - 1][1]
+        current_ts, current_rate = rate_points[idx]
+        if prev_rate == 0:
+            continue
+
+        jump_pct = ((current_rate - prev_rate) / prev_rate) * 100
+        returns.append(jump_pct)
+
+        if abs(jump_pct) > abs(biggest_spike["value"]):
+            biggest_spike = {
+                "timestamp": current_ts,
+                "value": jump_pct,
+            }
+
+    volatility_value = pstdev(returns) if len(returns) > 1 else 0.0
+    if volatility_value < 0.5:
+        volatility = "low"
+    elif volatility_value < 2:
+        volatility = "moderate"
+    else:
+        volatility = "high"
+
+    return {
+        "trend": trend,
+        "volatility": volatility,
+        "biggest_spike": biggest_spike,
+    }
+
 #get exchange rate with rate limiting
 @exchange_bp.route('/exchangeRate', methods=['GET'])
 @limiter.limit("10 per minute")
 def get_exchange_rate():
-    rates = utils.get_current_exchange_rates()
+    # Return weighted exchange rates computed from transactions in the last 72 hours.
+    historical_rates = utils.get_current_exchange_rates()
+    usd_to_lbp = historical_rates.get("usd_to_lbp")
+    lbp_to_usd = historical_rates.get("lbp_to_usd")
 
+    print(f"Retrieved exchange rates: USD to LBP = {usd_to_lbp}, LBP to USD = {lbp_to_usd}")
     return jsonify({
-        "message":"Retrieved average exchange rates",
-        "usd_to_lbp": rates["usd_to_lbp"],
-        "lbp_to_usd": rates["lbp_to_usd"]
+        "message": "Exchange rates retrieved",
+        "usd_to_lbp": usd_to_lbp,
+        "lbp_to_usd": lbp_to_usd
     }), 200
 
 
@@ -69,21 +137,25 @@ def get_exchange_rate_analytics():
 
     # compute stats for USD to LBP
     usd_rates = [r for r, w in usd_to_lbp_rates_weighted]  # plain rates
+    usd_points = _extract_ordered_rates_with_timestamps(usd_to_lbp_transactions)
     usd_stats = {
         "min": min(usd_rates) if usd_rates else None,
         "max": max(usd_rates) if usd_rates else None,
         "weighted_avg": utils.get_weighted_avg_rate(usd_to_lbp_rates_weighted),
         #pct change from first rate to last rate
-        "pct_change": ((usd_rates[-1] - usd_rates[0]) / usd_rates[0] * 100) if len(usd_rates) > 1 else 0
+        "pct_change": ((usd_rates[-1] - usd_rates[0]) / usd_rates[0] * 100) if len(usd_rates) > 1 else 0,
+        "insights": _calculate_insights(usd_points),
     }
 
     # compute stats for LBP to USD
     lbp_rates = [r for r, w in lbp_to_usd_rates_weighted] #plain rates
+    lbp_points = _extract_ordered_rates_with_timestamps(lbp_to_usd_transactions)
     lbp_stats = {
         "min": min(lbp_rates) if lbp_rates else None,
         "max": max(lbp_rates) if lbp_rates else None,
         "weighted_avg": utils.get_weighted_avg_rate(lbp_to_usd_rates_weighted),
-        "pct_change": ((lbp_rates[-1] - lbp_rates[0]) / lbp_rates[0] * 100) if len(lbp_rates) > 1 else 0
+        "pct_change": ((lbp_rates[-1] - lbp_rates[0]) / lbp_rates[0] * 100) if len(lbp_rates) > 1 else 0,
+        "insights": _calculate_insights(lbp_points),
     }
 
     return jsonify({

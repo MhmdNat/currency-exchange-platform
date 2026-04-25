@@ -1,0 +1,71 @@
+from flask import Blueprint, request, jsonify, g
+from extensions import db
+from model.user import User
+from model.userPreferences import UserPreferences, UserPreferencesSchema
+from utils import log_preference_change
+from jwtAuth import jwt_required
+from model.audit_log import AuditLogSchema
+
+preferences_bp = Blueprint('preferences', __name__)
+preference_schema = UserPreferencesSchema()
+audit_logs_schema = AuditLogSchema()
+
+
+@preferences_bp.route('/preferences', methods=['GET'])
+@jwt_required
+def get_preferences():
+    user_id = g.current_user_id
+    prefs = UserPreferences.query.filter_by(user_id=user_id).first()
+    if prefs:
+        return jsonify({
+            'default_time_range': prefs.default_time_range,
+            'graph_interval': prefs.graph_interval,
+            'default_exchange_direction': prefs.default_exchange_direction,
+        }), 200
+
+    return jsonify({
+        'message': 'No preferences found',
+        'default_time_range': '3d',
+        'graph_interval': 'daily',
+        'default_exchange_direction': 'usd-to-lbp',
+    }), 200
+
+
+@preferences_bp.route('/preferences', methods=['POST'])
+@jwt_required
+def set_preferences():
+    user_id = g.current_user_id
+    data = request.json or {}
+    prefs = UserPreferences.query.filter_by(user_id=user_id).first()
+
+    if not prefs:
+        # Create new preferences if they don't exist, otherwise update existing preferences.
+        prefs = UserPreferences(user_id=user_id)
+        db.session.add(prefs)
+
+    # Update preferences based on provided data; invalid values are ignored.
+    if 'default_time_range' in data and data['default_time_range'] in ['1d', '3d', '1w', '1m']:
+        prefs.default_time_range = data['default_time_range']
+
+    if 'graph_interval' in data and data['graph_interval'] in ['hourly', 'daily']:
+        prefs.graph_interval = data['graph_interval']
+
+    if 'default_exchange_direction' in data and data['default_exchange_direction'] in ['usd-to-lbp', 'lbp-to-usd']:
+        prefs.default_exchange_direction = data['default_exchange_direction']
+
+    db.session.commit()
+
+    # Audit log for preference update.
+    _actor_user = User.query.get(user_id)
+    log_preference_change(
+        actor_user_id=user_id,
+        actor_role="USER",
+        target_user_id=user_id,
+        prefs=prefs,
+        ip_address=request.remote_addr,
+    )
+
+    return jsonify({
+        'message': 'Preferences updated',
+        'preferences': preference_schema.dump(prefs),
+    }), 200

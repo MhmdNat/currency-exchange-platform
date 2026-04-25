@@ -7,6 +7,7 @@ from flask import request, abort, g
 from model.user import User
 
 SECRET_KEY=os.getenv("SECRET_KEY")
+SUPPORT_EMAIL = "mia67@mail.aub.edu"
 
 def create_token(user_id):
     payload = {
@@ -73,7 +74,8 @@ def jwt_required(f):
         #if user is suspended or banned they cannot access any authenticated route, even with a valid token
         user = User.query.get(user_id)
         if not user or user.status in ["SUSPENDED", "BANNED"]:
-            abort(403, "User access denied: account suspended or banned, contact support for more information")
+            status = user.status.lower() if user else "restricted"
+            abort(403, f"Your account is {status}. Please contact support at {SUPPORT_EMAIL}")
 
         g.current_user_id = user_id
         return f(*args, **kwargs)

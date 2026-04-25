@@ -18,7 +18,7 @@ admin_bp = Blueprint('admin', __name__)
 user_schema = UserSchema()
 preferences_schema = UserPreferencesSchema()
 rateAlert_schema = RateAlertSchema()
-audit_logs_schema = AuditLogSchema()
+audit_logs_schema = AuditLogSchema(many=True)
 
 
 @admin_bp.route('/admin/users', methods=['GET'])

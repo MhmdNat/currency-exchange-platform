@@ -101,11 +101,18 @@ def get_current_exchange_rates():
     currentTime = datetime.now(timezone.utc)
     threeDaysAgo = currentTime - threeDays
 
-    #get transactions by time
-    usd_to_lbp_transactions, lbp_to_usd_transactions = get_transactions_by_date(
-        threeDaysAgo, 
-        currentTime
-    )
+    # Use an exact rolling 72-hour window (no +1 day expansion).
+    usd_to_lbp_transactions = Transaction.query.filter(
+        Transaction.added_date >= threeDaysAgo,
+        Transaction.added_date <= currentTime,
+        Transaction.usd_to_lbp == True,
+    ).all()
+
+    lbp_to_usd_transactions = Transaction.query.filter(
+        Transaction.added_date >= threeDaysAgo,
+        Transaction.added_date <= currentTime,
+        Transaction.usd_to_lbp == False,
+    ).all()
 
     # get rates of transactions
     usd_to_lbp_rates_weighted, lbp_to_usd_rates_weighted = get_transaction_rates_weighted(

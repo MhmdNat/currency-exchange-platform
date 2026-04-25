@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request, g
 from flask_sqlalchemy import SQLAlchemy
 from extensions import bcrypt, db, ma, limiter
 from db_config import db_config
@@ -6,6 +6,7 @@ from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timezone
+import time
 import utils  
 from model.notifications import Notification
 from flask import jsonify
@@ -14,6 +15,7 @@ from flask import jsonify
 from routes.auth import auth_bp
 from routes.exchange import exchange_bp
 from routes.transactions import transactions_bp
+from routes.user_balance import user_balance_bp
 from routes.offers import offers_bp
 from routes.rateAlerts import rateAlerts_bp
 from routes.watchlist import watchlist_bp
@@ -36,14 +38,52 @@ ma.init_app(app)
 bcrypt.init_app(app)
 limiter.init_app(app)
 
+
+@app.before_request
+def log_request():
+    g.request_start_time = time.time()
+    payload = request.get_json(silent=True)
+    print(
+        f"[API Request] {request.method} {request.path} "
+        f"query={dict(request.args)} body={payload}"
+    )
+
+
+@app.after_request
+def log_response(response):
+    duration_ms = 0
+    if hasattr(g, "request_start_time"):
+        duration_ms = int((time.time() - g.request_start_time) * 1000)
+
+    response_body = None
+    if response.is_json:
+        response_body = response.get_json(silent=True)
+
+    print(
+        f"[API Response] {request.method} {request.path} "
+        f"status={response.status_code} time={duration_ms}ms body={response_body}"
+    )
+    return response
+
 @app.errorhandler(429)
 def rate_limit_exceeded(e):
     return jsonify({"error": "Too many requests. Please try again later."}), 429
+
+
+@app.errorhandler(401)
+def unauthorized_error(e):
+    return jsonify({"error": getattr(e, "description", "Unauthorized")}), 401
+
+
+@app.errorhandler(403)
+def forbidden_error(e):
+    return jsonify({"error": getattr(e, "description", "Forbidden")}), 403
 
 # Register blueprints
 app.register_blueprint(auth_bp)
 app.register_blueprint(exchange_bp)
 app.register_blueprint(transactions_bp)
+app.register_blueprint(user_balance_bp)
 app.register_blueprint(offers_bp)
 app.register_blueprint(rateAlerts_bp)
 app.register_blueprint(watchlist_bp)

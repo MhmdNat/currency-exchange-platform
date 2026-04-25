@@ -2,10 +2,12 @@ from extensions import db, ma
 from datetime import datetime, timezone
 from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
 from marshmallow import fields
+from marshmallow.fields import Method
 
 class Offer(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    creator = db.relationship("User", foreign_keys=[user_id], lazy="joined")
 
     from_currency = db.Column(db.String(3), nullable=False)
     to_currency = db.Column(db.String(3), nullable=False)
@@ -39,6 +41,13 @@ class Offer(db.Model):
 
 
 class OfferSchema(ma.SQLAlchemyAutoSchema):
+    creator_username = Method("get_creator_username")
+
+    def get_creator_username(self, obj):
+        if obj.creator:
+            return obj.creator.user_name
+        return None
+
     class Meta:
         model = Offer
         #tell marshmallow to include foreign key
@@ -46,6 +55,7 @@ class OfferSchema(ma.SQLAlchemyAutoSchema):
         fields = (
             "id",
             "user_id",
+            "creator_username",
             "from_currency",
             "to_currency",
             "amount_total",

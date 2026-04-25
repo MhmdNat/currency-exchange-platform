@@ -9,6 +9,7 @@ from utils import create_audit_log
 auth_bp = Blueprint('auth', __name__)
 
 user_schema = UserSchema()
+SUPPORT_EMAIL = "mia67@mail.aub.edu"
 
 @auth_bp.route('/user', methods=["POST"])
 @limiter.limit("10 per minute")
@@ -116,6 +117,25 @@ def authenticate():
         )
         return jsonify({"error":'Password does not match'}), 401
 
+    if user.status in ["SUSPENDED", "BANNED"]:
+        create_audit_log(
+            action_type=AuditActionType.LOGIN_FAILED,
+            description=(
+                f"Login blocked: user_id {user.id} has account status {user.status}. "
+                f"User instructed to contact support at {SUPPORT_EMAIL}."
+            ),
+            user_id=user.id,
+            entity_type="User",
+            entity_id=user.id,
+            ip_address=request.remote_addr
+        )
+        return jsonify({
+            "error": (
+                f"Your account is {user.status.lower()}. "
+                f"Please contact support at {SUPPORT_EMAIL}"
+            )
+        }), 403
+
     # Successful login: create token and log event
     token = jwtAuth.create_token(user.id)
     create_audit_log(
@@ -127,5 +147,6 @@ def authenticate():
         ip_address=request.remote_addr
     )
     return jsonify({
-        "token": token
+        "token": token,
+        "user": user_schema.dump(user)
     }), 200

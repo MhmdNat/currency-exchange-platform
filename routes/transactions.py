@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, abort
+from flask import Blueprint, request, jsonify, g
 from model.transaction import Transaction, TransactionSchema, db
 from model.userBalance import UserBalance
 from model.audit_log import AuditLog, AuditActionType
@@ -17,19 +17,16 @@ transactions_bp = Blueprint('transactions', __name__)
 transaction_schema = TransactionSchema()
 transactions_schema = TransactionSchema(many=True)
 
+
+def _json_error(message, status_code):
+    return jsonify({"error": message}), status_code
+
 @transactions_bp.route("/transaction", methods=["GET"])
 @limiter.limit("10 per minute")
+@jwt_required
 def get_user_transactions():
-    try:
-        user_id = jwtAuth.get_auth_user(request)
-    except InvalidTokenError as e:
-        abort(401, e)
-    except  ExpiredSignatureError as e:
-        abort(401, e)
-    if not user_id:
-        abort(401, "error: Unauthorized user")
-    
-    #here the user is authenticated
+    user_id = g.current_user_id
+
     transactions=db.session.execute(
         db.select(Transaction).where(Transaction.user_id==user_id)
     ).scalars().all()
@@ -49,18 +46,18 @@ def add_transaction():
     data = request.json
 
     if not data:
-        return abort(400, "Invalid JSON payload")
+        return _json_error("Invalid JSON payload", 400)
     
     usd_amount = data.get("usd_amount", 0)
     lbp_amount = data.get("lbp_amount", 0)
     usd_to_lbp = data.get("usd_to_lbp")
 
-    user_id = jwtAuth.get_auth_user(request)
+    user_id = g.current_user_id
 
 
     #if not an instance of boolean return error
     if not isinstance(usd_to_lbp, bool):
-        return abort(400, "Direction must be boolean")
+        return _json_error("Direction must be boolean", 400)
 
     #validating currency types and returning error if invalid
     try:
@@ -68,19 +65,19 @@ def add_transaction():
         lbp_amount = float(lbp_amount) if lbp_amount is not None else 0
 
     except (ValueError, TypeError):
-        return abort(400, "Amounts must be numbers")
+        return _json_error("Amounts must be numbers", 400)
 
     # user provides only the amount of the currency they are selling
     if usd_to_lbp:
         if usd_amount <= 0:
-            return abort(400, "usd_amount must be greater than 0 for USD to LBP")
+            return _json_error("usd_amount must be greater than 0 for USD to LBP", 400)
         if lbp_amount > 0:
-            return abort(400, "Do not provide lbp_amount for USD to LBP transactions")
+            return _json_error("Do not provide lbp_amount for USD to LBP transactions", 400)
     else:
         if lbp_amount <= 0:
-            return abort(400, "lbp_amount must be greater than 0 for LBP to USD")
+            return _json_error("lbp_amount must be greater than 0 for LBP to USD", 400)
         if usd_amount > 0:
-            return abort(400, "Do not provide usd_amount for LBP to USD transactions")
+            return _json_error("Do not provide usd_amount for LBP to USD transactions", 400)
 
     if usd_to_lbp:
         base_currency = "USD"
@@ -92,22 +89,25 @@ def add_transaction():
     # get latest exchange rate for the pair if available and not flagged as anomalous
     latest_rate = RateService.get_latest_rate(base_currency, quote_currency)
     if not latest_rate:
-        return abort(503, "Exchange rate is temporarily unavailable. Please try again later.")
+        return _json_error("Exchange rate is temporarily unavailable. Please try again later.", 503)
 
     if latest_rate.is_flagged:
-        return abort(503, "Current exchange rate is temporarily unavailable due to detected anomalies. Please try again later.")   
+        return _json_error("Current exchange rate is temporarily unavailable due to detected anomalies. Please try again later.", 503)
 
     try:
         #lock the user's balance row for update
         user_balance = db.session.query(UserBalance).filter_by(user_id=user_id).with_for_update().first()
         if not user_balance:
-            return abort(400, "User balance not found")
+            return _json_error("User balance not found", 400)
 
         # compute output amount and update user balance
         if usd_to_lbp:
             lbp_amount = usd_amount * latest_rate.rate_value
             if user_balance.usd_amount < usd_amount:
-                abort(400, f"Insufficient USD balance. Required: {usd_amount}, Available: {user_balance.usd_amount}")
+                return _json_error(
+                    f"Insufficient USD balance. Required: {usd_amount}, Available: {user_balance.usd_amount}",
+                    400,
+                )
                 #sufficient balance, update it
             user_balance.usd_amount -= usd_amount
             user_balance.lbp_amount += lbp_amount
@@ -115,7 +115,10 @@ def add_transaction():
             #rate is in LBP per 1 USD, so converting LBP to USD should divide by rate
             usd_amount = lbp_amount / latest_rate.rate_value
             if user_balance.lbp_amount < lbp_amount:
-                abort(400, f"Insufficient LBP balance. Required: {lbp_amount}, Available: {user_balance.lbp_amount}")
+                return _json_error(
+                    f"Insufficient LBP balance. Required: {lbp_amount}, Available: {user_balance.lbp_amount}",
+                    400,
+                )
             #sufficient balance, update it
             user_balance.lbp_amount -= lbp_amount
             user_balance.usd_amount += usd_amount
@@ -152,9 +155,14 @@ def add_transaction():
                 "message": "Transaction created successfully",
                 "applied_rate": latest_rate.rate_value,
                 "transaction": transaction_schema.dump(t),
+                "updated_balance": {
+                    "usd_balance": user_balance.usd_amount,
+                    "lbp_balance": user_balance.lbp_amount,
+                },
+                # Backward-compatible payload for older frontend code.
                 "balance": {
                     "usd_amount": user_balance.usd_amount,
-                    "lbp_amount": user_balance.lbp_amount
+                    "lbp_amount": user_balance.lbp_amount,
                 }
             }
         ), 201
